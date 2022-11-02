@@ -384,6 +384,7 @@ unsafe impl Send for ReadOptions {}
 unsafe impl Send for IngestExternalFileOptions {}
 unsafe impl Send for CacheWrapper {}
 unsafe impl Send for EnvWrapper {}
+unsafe impl Send for CompactOptions {}
 
 // Sync is similarly safe for many types because they do not expose interior mutability, and their
 // use within the rocksdb library is generally behind a const reference
