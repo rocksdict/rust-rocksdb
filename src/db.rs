@@ -132,6 +132,12 @@ pub struct DBCommon<T: ThreadMode, D: DBInner> {
     _outlive: Vec<OptionsMustOutliveDB>,
 }
 
+impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
+    pub fn inner(&self) -> *mut ffi::rocksdb_t {
+        self.inner.inner()
+    }
+}
+
 /// Minimal set of DB-related methods, intended to be generic over
 /// `DBWithThreadMode<T>`. Mainly used internally
 pub trait DBAccess {
