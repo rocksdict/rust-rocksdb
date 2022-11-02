@@ -346,6 +346,12 @@ pub struct ReadOptions {
     iterate_lower_bound: Option<Vec<u8>>,
 }
 
+impl ReadOptions {
+    pub fn inner(&self) -> *mut ffi::rocksdb_readoptions_t {
+        self.inner
+    }
+}
+
 /// Configuration of cuckoo-based storage.
 pub struct CuckooTableOptions {
     pub(crate) inner: *mut ffi::rocksdb_cuckoo_table_options_t,
