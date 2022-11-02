@@ -275,6 +275,12 @@ pub struct Options {
     pub(crate) outlive: OptionsMustOutliveDB,
 }
 
+impl Options {
+    pub fn inner(&self) -> *mut ffi::rocksdb_options_t {
+        self.inner
+    }
+}
+
 /// Optionally disable WAL or sync for this write.
 ///
 /// # Examples
