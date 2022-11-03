@@ -247,10 +247,6 @@ fn build_rocksdb() {
         config.flag("-Wno-invalid-offsetof");
     }
 
-    if target.contains("darwin") {
-        config.flag("-fno-aligned-allocation");
-    }
-
     for file in lib_sources {
         config.file(&format!("rocksdb/{file}"));
     }
