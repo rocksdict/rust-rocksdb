@@ -3224,10 +3224,10 @@ impl Options {
                 .iter()
                 .map(|ptr| {
                     let name = String::from_utf8_lossy(CStr::from_ptr(*ptr).to_bytes()).to_string();
-                    free(*ptr as *mut c_void);
+                    // free(*ptr as *mut c_void);
                     name
                 });
-            free(column_family_names as *mut c_void);
+            // free(column_family_names as *mut c_void);
             let column_family_options_vec =
                 from_raw_parts(column_family_options, num_column_families)
                     .iter()
@@ -3235,7 +3235,7 @@ impl Options {
                         inner: *ptr,
                         outlive: OptionsMustOutliveDB::default(),
                     });
-            free(column_family_options as *mut c_void);
+            // free(column_family_options as *mut c_void);
             column_family_names_vec
                 .into_iter()
                 .zip(column_family_options_vec)
