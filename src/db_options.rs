@@ -36,8 +36,6 @@ use crate::{
     ColumnFamilyDescriptor, Error, SnapshotWithThreadMode,
 };
 
-const DEFAULT_CACHE_SIZE: usize = 8 * 1024 * 1024;
-
 fn new_cache(capacity: size_t) -> *mut ffi::rocksdb_cache_t {
     unsafe { ffi::rocksdb_cache_create_lru(capacity) }
 }
@@ -3212,107 +3210,6 @@ impl Options {
         unsafe {
             ffi::rocksdb_options_set_blob_compaction_readahead_size(self.inner, val);
         }
-    }
-}
-
-impl Options {
-    /// Constructs the DBOptions and ColumnFamilyDescriptors by loading the
-    /// latest RocksDB options file stored in the specified rocksdb database.
-    ///
-    /// Note that the all the pointer options (except table_factory, which will
-    /// be described in more details below) will be initialized with the default
-    /// values.  Developers can further initialize them after this function call.
-    /// Below is an example list of pointer options which will be initialized
-    ///
-    /// * env
-    /// * memtable_factory
-    /// * compaction_filter_factory
-    /// * prefix_extractor
-    /// * comparator
-    /// * merge_operator
-    /// * compaction_filter
-    ///
-    /// User can also choose to load customized comparator, env, and/or
-    /// merge_operator through object registry:
-    /// * comparator needs to be registered through Registrar<const Comparator>
-    /// * env needs to be registered through Registrar<Env>
-    /// * merge operator needs to be registered through
-    ///     Registrar<std::shared_ptr<MergeOperator>>.
-    ///
-    /// For table_factory, this function further supports deserializing
-    /// BlockBasedTableFactory and its BlockBasedTableOptions except the
-    /// pointer options of BlockBasedTableOptions (flush_block_policy_factory,
-    /// block_cache, and block_cache_compressed), which will be initialized with
-    /// default values.  Developers can further specify these three options by
-    /// casting the return value of TableFactory::GetOptions() to
-    /// BlockBasedTableOptions and making necessary changes.
-    ///
-    /// ignore_unknown_options can be set to true if you want to ignore options
-    /// that are from a newer version of the db, essentially for forward
-    /// compatibility.
-    ///
-    /// config_options contains a set of options that controls the processing
-    /// of the options.  The LoadLatestOptions(ConfigOptions...) should be preferred;
-    /// the alternative signature may be deprecated in a future release. The
-    /// equivalent functionality can be achieved by setting the corresponding options
-    /// in the ConfigOptions parameter.
-    ///
-    /// examples/options_file_example.cc demonstrates how to use this function
-    /// to open a RocksDB instance.
-    ///
-    /// @see LoadOptionsFromFile
-    pub fn load_latest<P: AsRef<Path>>(
-        path: P,
-        env: Env,
-        ignore_unknown_options: bool,
-    ) -> Result<(Options, Vec<ColumnFamilyDescriptor>), Error> {
-        let path = to_cpath(path)?;
-        let mut db_options: *mut rocksdb_options_t = null_mut();
-        let mut num_column_families: usize = 0;
-        let mut column_family_names: *mut *mut c_char = null_mut();
-        let mut column_family_options: *mut *mut rocksdb_options_t = null_mut();
-        let cache = new_cache(DEFAULT_CACHE_SIZE);
-        unsafe {
-            ffi_try!(ffi::rocksdb_load_latest_options(
-                path.as_ptr(),
-                env.0.inner,
-                ignore_unknown_options,
-                cache,
-                &mut db_options,
-                &mut num_column_families,
-                &mut column_family_names,
-                &mut column_family_options,
-            ));
-        }
-        let options = Options {
-            inner: db_options,
-            outlive: OptionsMustOutliveDB::default(),
-        };
-        let column_families = unsafe {
-            let column_family_names_vec = from_raw_parts(column_family_names, num_column_families)
-                .iter()
-                .map(|ptr| from_cstr(*ptr));
-            let column_family_options_vec =
-                from_raw_parts(column_family_options, num_column_families)
-                    .iter()
-                    .map(|ptr| Options {
-                        inner: *ptr,
-                        outlive: OptionsMustOutliveDB::default(),
-                    });
-            let column_descriptors = column_family_names_vec
-                .into_iter()
-                .zip(column_family_options_vec)
-                .map(|(name, options)| ColumnFamilyDescriptor { name, options })
-                .collect::<Vec<_>>();
-            // free pointers
-            from_raw_parts(column_family_names, num_column_families)
-                .iter()
-                .for_each(|ptr| free(*ptr as *mut c_void));
-            free(column_family_names as *mut c_void);
-            free(column_family_options as *mut c_void);
-            column_descriptors
-        };
-        Ok((options, column_families))
     }
 }
 
