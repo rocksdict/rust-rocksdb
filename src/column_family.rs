@@ -26,8 +26,8 @@ pub const DEFAULT_COLUMN_FAMILY_NAME: &str = "default";
 ///
 /// A description of the column family, containing the name and `Options`.
 pub struct ColumnFamilyDescriptor {
-    pub(crate) name: String,
-    pub(crate) options: Options,
+    pub name: String,
+    pub options: Options,
 }
 
 impl ColumnFamilyDescriptor {
