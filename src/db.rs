@@ -1880,10 +1880,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         opts: &IngestExternalFileOptions,
         paths: Vec<P>,
     ) -> Result<(), Error> {
-        let paths_v: Vec<CString> = paths
-            .iter()
-            .map(to_cpath)
-            .collect::<Result<Vec<_>, _>>()?;
+        let paths_v: Vec<CString> = paths.iter().map(to_cpath).collect::<Result<Vec<_>, _>>()?;
 
         let cpaths: Vec<_> = paths_v.iter().map(|path| path.as_ptr()).collect();
 
@@ -1908,10 +1905,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         opts: &IngestExternalFileOptions,
         paths: Vec<P>,
     ) -> Result<(), Error> {
-        let paths_v: Vec<CString> = paths
-            .iter()
-            .map(to_cpath)
-            .collect::<Result<Vec<_>, _>>()?;
+        let paths_v: Vec<CString> = paths.iter().map(to_cpath).collect::<Result<Vec<_>, _>>()?;
 
         let cpaths: Vec<_> = paths_v.iter().map(|path| path.as_ptr()).collect();
 
