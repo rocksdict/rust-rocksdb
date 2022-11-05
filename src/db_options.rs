@@ -21,6 +21,7 @@ use std::sync::Arc;
 use libc::{self, c_char, c_double, c_int, c_uchar, c_uint, c_void, free, size_t};
 use librocksdb_sys::rocksdb_options_t;
 
+use crate::ffi_util::from_cstr;
 use crate::{
     compaction_filter::{self, CompactionFilterCallback, CompactionFilterFn},
     compaction_filter_factory::{self, CompactionFilterFactory},
@@ -3222,12 +3223,7 @@ impl Options {
         let column_families = unsafe {
             let column_family_names_vec = from_raw_parts(column_family_names, num_column_families)
                 .iter()
-                .map(|ptr| {
-                    let name = String::from_utf8_lossy(CStr::from_ptr(*ptr).to_bytes()).to_string();
-                    // free(*ptr as *mut c_void);
-                    name
-                });
-            // free(column_family_names as *mut c_void);
+                .map(|ptr| from_cstr(*ptr));
             let column_family_options_vec =
                 from_raw_parts(column_family_options, num_column_families)
                     .iter()
@@ -3235,12 +3231,18 @@ impl Options {
                         inner: *ptr,
                         outlive: OptionsMustOutliveDB::default(),
                     });
-            // free(column_family_options as *mut c_void);
-            column_family_names_vec
+            let column_descriptors = column_family_names_vec
                 .into_iter()
                 .zip(column_family_options_vec)
                 .map(|(name, options)| ColumnFamilyDescriptor { name, options })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            // free pointers
+            from_raw_parts(column_family_names, num_column_families)
+                .iter()
+                .for_each(|ptr| free(*ptr as *mut c_void));
+            free(column_family_names as *mut c_void);
+            free(column_family_options as *mut c_void);
+            column_descriptors
         };
         Ok((options, column_families))
     }
