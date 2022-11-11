@@ -13,10 +13,20 @@
 // limitations under the License.
 //
 
-use crate::{column_family::AsColumnFamilyRef, column_family::BoundColumnFamily, column_family::UnboundColumnFamily, db_options::OptionsMustOutliveDB, ffi, ffi_util::{from_cstr, opt_bytes_to_ptr, raw_data, to_cpath, CStrLike}, ColumnFamily, ColumnFamilyDescriptor, CompactOptions, DBIteratorWithThreadMode, DBPinnableSlice, DBRawIteratorWithThreadMode, DBWALIterator, Direction, Error, FlushOptions, IngestExternalFileOptions, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, WriteOptions, DEFAULT_COLUMN_FAMILY_NAME, Env, Cache};
+use crate::{
+    column_family::AsColumnFamilyRef,
+    column_family::BoundColumnFamily,
+    column_family::UnboundColumnFamily,
+    db_options::OptionsMustOutliveDB,
+    ffi,
+    ffi_util::{from_cstr, opt_bytes_to_ptr, raw_data, to_cpath, CStrLike},
+    ColumnFamily, ColumnFamilyDescriptor, CompactOptions, DBIteratorWithThreadMode,
+    DBPinnableSlice, DBRawIteratorWithThreadMode, DBWALIterator, Direction, Error, FlushOptions,
+    IngestExternalFileOptions, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode,
+    WriteBatch, WriteOptions, DEFAULT_COLUMN_FAMILY_NAME,
+};
 
 use libc::{self, c_char, c_int, c_uchar, c_void, size_t};
-use librocksdb_sys::rocksdb_options_t;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::fmt;
@@ -25,7 +35,6 @@ use std::iter;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
-use std::ptr::null_mut;
 use std::slice;
 use std::str;
 use std::sync::Arc;
@@ -855,38 +864,6 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         let cpath = to_cpath(path)?;
         unsafe {
             ffi_try!(ffi::rocksdb_destroy_db(opts.inner, cpath.as_ptr()));
-        }
-        Ok(())
-    }
-
-    pub fn load_latest_options_destroy<P: AsRef<Path>>(
-        path: P,
-        env: Env,
-        ignore_unknown_options: bool,
-        cache: Cache,
-    ) -> Result<(), Error> {
-        let path = to_cpath(path)?;
-        let mut db_options: *mut rocksdb_options_t = null_mut();
-        let mut len: usize = 0;
-        let mut list_column_family_names: *mut *mut c_char = null_mut();
-        let mut list_column_family_options: *mut *mut rocksdb_options_t = null_mut();
-        unsafe {
-            ffi_try!(ffi::rocksdb_load_latest_options(
-                path.as_ptr(),
-                env.0.inner,
-                ignore_unknown_options,
-                cache.0.inner,
-                &mut db_options,
-                &mut len,
-                &mut list_column_family_names,
-                &mut list_column_family_options,
-            ));
-            ffi::rocksdb_load_latest_options_destroy(
-                db_options,
-                list_column_family_names,
-                list_column_family_options,
-                len,
-            );
         }
         Ok(())
     }

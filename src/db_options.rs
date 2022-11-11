@@ -95,10 +95,10 @@ impl Cache {
 /// Note: currently, C API behinds C++ API for various settings.
 /// See also: `rocksdb/include/env.h`
 #[derive(Clone)]
-pub struct Env(pub(crate) Arc<EnvWrapper>);
+pub struct Env(Arc<EnvWrapper>);
 
 pub(crate) struct EnvWrapper {
-    pub(crate) inner: *mut ffi::rocksdb_env_t,
+    inner: *mut ffi::rocksdb_env_t,
 }
 
 impl Drop for EnvWrapper {
