@@ -15,20 +15,19 @@
 use std::ffi::CStr;
 use std::path::Path;
 use std::ptr::null_mut;
-use std::slice::from_raw_parts;
+use std::slice;
 use std::sync::Arc;
 
-use libc::{self, c_char, c_double, c_int, c_uchar, c_uint, c_void, free, size_t};
-use librocksdb_sys::rocksdb_options_t;
+use libc::{self, c_char, c_double, c_int, c_uchar, c_uint, c_void, size_t};
 
-use crate::ffi_util::from_cstr;
 use crate::{
     compaction_filter::{self, CompactionFilterCallback, CompactionFilterFn},
     compaction_filter_factory::{self, CompactionFilterFactory},
     comparator::{self, ComparatorCallback, CompareFn},
     db::DBAccess,
+    env::Env,
     ffi,
-    ffi_util::{to_cpath, CStrLike},
+    ffi_util::{from_cstr, to_cpath, CStrLike},
     merge_operator::{
         self, full_merge_callback, partial_merge_callback, MergeFn, MergeOperatorCallback,
     },
@@ -81,127 +80,6 @@ impl Cache {
         unsafe {
             ffi::rocksdb_cache_set_capacity(self.0.inner, capacity);
         }
-    }
-}
-
-/// An Env is an interface used by the rocksdb implementation to access
-/// operating system functionality like the filesystem etc.  Callers
-/// may wish to provide a custom Env object when opening a database to
-/// get fine gain control; e.g., to rate limit file system operations.
-///
-/// All Env implementations are safe for concurrent access from
-/// multiple threads without any external synchronization.
-///
-/// Note: currently, C API behinds C++ API for various settings.
-/// See also: `rocksdb/include/env.h`
-#[derive(Clone)]
-pub struct Env(Arc<EnvWrapper>);
-
-pub(crate) struct EnvWrapper {
-    inner: *mut ffi::rocksdb_env_t,
-}
-
-impl Drop for EnvWrapper {
-    fn drop(&mut self) {
-        unsafe {
-            ffi::rocksdb_env_destroy(self.inner);
-        }
-    }
-}
-
-impl Env {
-    /// Returns default env
-    pub fn default() -> Result<Self, Error> {
-        let env = unsafe { ffi::rocksdb_create_default_env() };
-        if env.is_null() {
-            Err(Error::new("Could not create mem env".to_owned()))
-        } else {
-            Ok(Self(Arc::new(EnvWrapper { inner: env })))
-        }
-    }
-
-    /// Returns a new environment that stores its data in memory and delegates
-    /// all non-file-storage tasks to base_env.
-    pub fn mem_env() -> Result<Self, Error> {
-        let env = unsafe { ffi::rocksdb_create_mem_env() };
-        if env.is_null() {
-            Err(Error::new("Could not create mem env".to_owned()))
-        } else {
-            Ok(Self(Arc::new(EnvWrapper { inner: env })))
-        }
-    }
-
-    /// Sets the number of background worker threads of a specific thread pool for this environment.
-    /// `LOW` is the default pool.
-    ///
-    /// Default: 1
-    pub fn set_background_threads(&mut self, num_threads: c_int) {
-        unsafe {
-            ffi::rocksdb_env_set_background_threads(self.0.inner, num_threads);
-        }
-    }
-
-    /// Sets the size of the high priority thread pool that can be used to
-    /// prevent compactions from stalling memtable flushes.
-    pub fn set_high_priority_background_threads(&mut self, n: c_int) {
-        unsafe {
-            ffi::rocksdb_env_set_high_priority_background_threads(self.0.inner, n);
-        }
-    }
-
-    /// Sets the size of the low priority thread pool that can be used to
-    /// prevent compactions from stalling memtable flushes.
-    pub fn set_low_priority_background_threads(&mut self, n: c_int) {
-        unsafe {
-            ffi::rocksdb_env_set_low_priority_background_threads(self.0.inner, n);
-        }
-    }
-
-    /// Sets the size of the bottom priority thread pool that can be used to
-    /// prevent compactions from stalling memtable flushes.
-    pub fn set_bottom_priority_background_threads(&mut self, n: c_int) {
-        unsafe {
-            ffi::rocksdb_env_set_bottom_priority_background_threads(self.0.inner, n);
-        }
-    }
-
-    /// Wait for all threads started by StartThread to terminate.
-    pub fn join_all_threads(&mut self) {
-        unsafe {
-            ffi::rocksdb_env_join_all_threads(self.0.inner);
-        }
-    }
-
-    /// Lowering IO priority for threads from the specified pool.
-    pub fn lower_thread_pool_io_priority(&mut self) {
-        unsafe {
-            ffi::rocksdb_env_lower_thread_pool_io_priority(self.0.inner);
-        }
-    }
-
-    /// Lowering IO priority for high priority thread pool.
-    pub fn lower_high_priority_thread_pool_io_priority(&mut self) {
-        unsafe {
-            ffi::rocksdb_env_lower_high_priority_thread_pool_io_priority(self.0.inner);
-        }
-    }
-
-    /// Lowering CPU priority for threads from the specified pool.
-    pub fn lower_thread_pool_cpu_priority(&mut self) {
-        unsafe {
-            ffi::rocksdb_env_lower_thread_pool_cpu_priority(self.0.inner);
-        }
-    }
-
-    /// Lowering CPU priority for high priority thread pool.
-    pub fn lower_high_priority_thread_pool_cpu_priority(&mut self) {
-        unsafe {
-            ffi::rocksdb_env_lower_high_priority_thread_pool_cpu_priority(self.0.inner);
-        }
-    }
-
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
     }
 }
 
@@ -399,8 +277,6 @@ unsafe impl Send for CuckooTableOptions {}
 unsafe impl Send for ReadOptions {}
 unsafe impl Send for IngestExternalFileOptions {}
 unsafe impl Send for CacheWrapper {}
-unsafe impl Send for EnvWrapper {}
-unsafe impl Send for CompactOptions {}
 
 // Sync is similarly safe for many types because they do not expose interior mutability, and their
 // use within the rocksdb library is generally behind a const reference
@@ -411,7 +287,6 @@ unsafe impl Sync for CuckooTableOptions {}
 unsafe impl Sync for ReadOptions {}
 unsafe impl Sync for IngestExternalFileOptions {}
 unsafe impl Sync for CacheWrapper {}
-unsafe impl Sync for EnvWrapper {}
 
 impl Drop for Options {
     fn drop(&mut self) {
@@ -652,6 +527,9 @@ impl BlockBasedOptions {
         }
     }
 
+    /// If cache_index_and_filter_blocks is enabled, cache index and filter blocks with high priority.
+    /// If set to true, depending on implementation of block cache,
+    /// index and filter blocks may be less likely to be evicted than data blocks.
     pub fn set_cache_index_and_filter_blocks(&mut self, v: bool) {
         unsafe {
             ffi::rocksdb_block_based_options_set_cache_index_and_filter_blocks(
@@ -898,10 +776,10 @@ impl Options {
         cache: Cache,
     ) -> Result<(Options, Vec<ColumnFamilyDescriptor>), Error> {
         let path = to_cpath(path)?;
-        let mut db_options: *mut rocksdb_options_t = null_mut();
+        let mut db_options: *mut ffi::rocksdb_options_t = null_mut();
         let mut num_column_families: usize = 0;
         let mut column_family_names: *mut *mut c_char = null_mut();
-        let mut column_family_options: *mut *mut rocksdb_options_t = null_mut();
+        let mut column_family_options: *mut *mut ffi::rocksdb_options_t = null_mut();
         unsafe {
             ffi_try!(ffi::rocksdb_load_latest_options(
                 path.as_ptr(),
@@ -933,27 +811,29 @@ impl Options {
     unsafe fn read_column_descriptors(
         num_column_families: usize,
         column_family_names: *mut *mut c_char,
-        column_family_options: *mut *mut rocksdb_options_t,
+        column_family_options: *mut *mut ffi::rocksdb_options_t,
     ) -> Vec<ColumnFamilyDescriptor> {
-        let column_family_names_iter = from_raw_parts(column_family_names, num_column_families)
-            .iter()
-            .map(|ptr| from_cstr(*ptr));
-        let column_family_options_iter = from_raw_parts(column_family_options, num_column_families)
-            .iter()
-            .map(|ptr| Options {
-                inner: *ptr,
-                outlive: OptionsMustOutliveDB::default(),
-            });
+        let column_family_names_iter =
+            slice::from_raw_parts(column_family_names, num_column_families)
+                .iter()
+                .map(|ptr| from_cstr(*ptr));
+        let column_family_options_iter =
+            slice::from_raw_parts(column_family_options, num_column_families)
+                .iter()
+                .map(|ptr| Options {
+                    inner: *ptr,
+                    outlive: OptionsMustOutliveDB::default(),
+                });
         let column_descriptors = column_family_names_iter
             .zip(column_family_options_iter)
             .map(|(name, options)| ColumnFamilyDescriptor { name, options })
             .collect::<Vec<_>>();
         // free pointers
-        from_raw_parts(column_family_names, num_column_families)
+        slice::from_raw_parts(column_family_names, num_column_families)
             .iter()
-            .for_each(|ptr| free(*ptr as *mut c_void));
-        free(column_family_names as *mut c_void);
-        free(column_family_options as *mut c_void);
+            .for_each(|ptr| ffi::rocksdb_free(*ptr as *mut c_void));
+        ffi::rocksdb_free(column_family_names as *mut c_void);
+        ffi::rocksdb_free(column_family_options as *mut c_void);
         column_descriptors
     }
 
@@ -3385,7 +3265,7 @@ impl ReadOptions {
     /// Sets the snapshot which should be used for the read.
     /// The snapshot must belong to the DB that is being read and must
     /// not have been released.
-    pub(crate) fn set_snapshot<D: DBAccess>(&mut self, snapshot: &SnapshotWithThreadMode<D>) {
+    pub fn set_snapshot<D: DBAccess>(&mut self, snapshot: &SnapshotWithThreadMode<D>) {
         unsafe {
             ffi::rocksdb_readoptions_set_snapshot(self.inner, snapshot.inner);
         }
