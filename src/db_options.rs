@@ -145,8 +145,6 @@ impl BlockBasedOptionsMustOutliveDB {
 ///    opts.set_level_zero_stop_writes_trigger(2000);
 ///    opts.set_level_zero_slowdown_writes_trigger(0);
 ///    opts.set_compaction_style(DBCompactionStyle::Universal);
-///    opts.set_max_background_compactions(4);
-///    opts.set_max_background_flushes(4);
 ///    opts.set_disable_auto_compactions(true);
 ///
 ///    DB::open(&opts, path).unwrap()
@@ -643,6 +641,15 @@ impl BlockBasedOptions {
             ffi::rocksdb_block_based_options_set_whole_key_filtering(self.inner, c_uchar::from(v));
         }
     }
+
+    /// Use the specified checksum type.
+    /// Newly created table files will be protected with this checksum type.
+    /// Old table files will still be readable, even though they have different checksum type.
+    pub fn set_checksum_type(&mut self, checksum_type: ChecksumType) {
+        unsafe {
+            ffi::rocksdb_block_based_options_set_checksum(self.inner, checksum_type as c_char);
+        }
+    }
 }
 
 impl Default for BlockBasedOptions {
@@ -1022,8 +1029,8 @@ impl Options {
     ///
     /// Note that to actually unable bottom-most compression configuration after
     /// setting the compression type it needs to be enabled by calling
-    /// [`set_bottommost_compression_options`] or
-    /// [`set_bottommost_zstd_max_train_bytes`] method with `enabled` argument
+    /// [`set_bottommost_compression_options`](#method.set_bottommost_compression_options) or
+    /// [`set_bottommost_zstd_max_train_bytes`](#method.set_bottommost_zstd_max_train_bytes) method with `enabled` argument
     /// set to `true`.
     ///
     /// # Examples
@@ -1118,9 +1125,9 @@ impl Options {
     }
 
     /// Sets compression options for blocks at the bottom-most level.  Meaning
-    /// of all settings is the same as in [`set_compression_options`] method but
+    /// of all settings is the same as in [`set_compression_options`](#method.set_compression_options) method but
     /// affect only the bottom-most compression which is set using
-    /// [`set_bottommost_compression_type`] method.
+    /// [`set_bottommost_compression_type`](#method.set_bottommost_compression_type) method.
     ///
     /// # Examples
     ///
@@ -1692,10 +1699,10 @@ impl Options {
     /// # Examples
     ///
     /// ```
-    /// #[allow(deprecated)]
     /// use rocksdb::Options;
     ///
     /// let mut opts = Options::default();
+    /// #[allow(deprecated)]
     /// opts.set_allow_os_buffer(false);
     /// ```
     #[deprecated(
@@ -2118,6 +2125,7 @@ impl Options {
     /// use rocksdb::Options;
     ///
     /// let mut opts = Options::default();
+    /// #[allow(deprecated)]
     /// opts.set_max_background_compactions(2);
     /// ```
     #[deprecated(
@@ -2153,6 +2161,7 @@ impl Options {
     /// use rocksdb::Options;
     ///
     /// let mut opts = Options::default();
+    /// #[allow(deprecated)]
     /// opts.set_max_background_flushes(2);
     /// ```
     #[deprecated(
@@ -2983,7 +2992,7 @@ impl Options {
 
     /// Enable the use of key-value separation.
     ///
-    /// More details can be found here: http://rocksdb.org/blog/2021/05/26/integrated-blob-db.html.
+    /// More details can be found here: [Integrated BlobDB](http://rocksdb.org/blog/2021/05/26/integrated-blob-db.html).
     ///
     /// Default: false (disable)
     ///
@@ -3563,6 +3572,15 @@ pub enum MemtableFactory {
     HashLinkList {
         bucket_count: usize,
     },
+}
+
+/// Used by BlockBasedOptions::set_checksum_type.
+pub enum ChecksumType {
+    NoChecksum = 0,
+    CRC32c = 1,
+    XXHash = 2,
+    XXHash64 = 3,
+    XXH3 = 4, // Supported since RocksDB 6.27
 }
 
 /// Used with DBOptions::set_plain_table_factory.
