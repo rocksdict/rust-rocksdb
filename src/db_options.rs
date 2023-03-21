@@ -407,24 +407,6 @@ impl BlockBasedOptions {
         }
     }
 
-    /// When configured: use the specified cache for compressed blocks.
-    /// Otherwise rocksdb will not use a compressed block cache.
-    ///
-    /// Note: though it looks similar to `block_cache`, RocksDB doesn't put the
-    /// same type of object there.
-    #[deprecated(
-        since = "0.15.0",
-        note = "This function will be removed in next release. Use set_block_cache_compressed instead"
-    )]
-    pub fn set_lru_cache_compressed(&mut self, size: size_t) {
-        let cache = new_cache(size);
-        unsafe {
-            // Since cache is wrapped in shared_ptr, we don't need to
-            // call rocksdb_cache_destroy explicitly.
-            ffi::rocksdb_block_based_options_set_block_cache_compressed(self.inner, cache);
-        }
-    }
-
     /// Sets global cache for blocks (user data is stored in a set of blocks, and
     /// a block is the unit of reading from disk). Cache must outlive DB instance which uses it.
     ///
@@ -435,16 +417,6 @@ impl BlockBasedOptions {
             ffi::rocksdb_block_based_options_set_block_cache(self.inner, cache.0.inner);
         }
         self.outlive.block_cache = Some(cache.clone());
-    }
-
-    /// Sets global cache for compressed blocks. Cache must outlive DB instance which uses it.
-    ///
-    /// By default, rocksdb will not use a compressed block cache.
-    pub fn set_block_cache_compressed(&mut self, cache: &Cache) {
-        unsafe {
-            ffi::rocksdb_block_based_options_set_block_cache_compressed(self.inner, cache.0.inner);
-        }
-        self.outlive.block_cache_compressed = Some(cache.clone());
     }
 
     /// Disable block cache
