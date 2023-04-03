@@ -106,14 +106,12 @@ impl OptionsMustOutliveDB {
 #[derive(Default)]
 struct BlockBasedOptionsMustOutliveDB {
     block_cache: Option<Cache>,
-    block_cache_compressed: Option<Cache>,
 }
 
 impl BlockBasedOptionsMustOutliveDB {
     fn clone(&self) -> Self {
         Self {
             block_cache: self.block_cache.as_ref().map(Cache::clone),
-            block_cache_compressed: self.block_cache_compressed.as_ref().map(Cache::clone),
         }
     }
 }
