@@ -1,14 +1,12 @@
 cache/cache.cc
 cache/cache_entry_roles.cc
 cache/cache_key.cc
-cache/cache_helpers.cc
 cache/cache_reservation_manager.cc
 cache/charged_cache.cc
 cache/clock_cache.cc
+cache/fast_lru_cache.cc
 cache/lru_cache.cc
 cache/compressed_secondary_cache.cc
-cache/secondary_cache.cc
-cache/secondary_cache_adapter.cc
 cache/sharded_cache.cc
 db/arena_wrapped_db_iter.cc
 db/blob/blob_contents.cc
@@ -52,6 +50,7 @@ db/db_impl/db_impl_open.cc
 db/db_impl/db_impl_readonly.cc
 db/db_impl/db_impl_secondary.cc
 db/db_impl/db_impl_write.cc
+db/db_impl/db_spdb_impl_write.cc
 db/db_info_dumper.cc
 db/db_iter.cc
 db/dbformat.cc
@@ -95,7 +94,6 @@ db/wide/wide_columns.cc
 db/write_batch.cc
 db/write_batch_base.cc
 db/write_controller.cc
-db/write_stall_stats.cc
 db/write_thread.cc
 env/composite_env.cc
 env/env.cc
@@ -155,7 +153,6 @@ options/db_options.cc
 options/options.cc
 options/options_helper.cc
 options/options_parser.cc
-port/mmap.cc
 port/port_posix.cc
 port/win/env_default.cc
 port/win/env_win.cc
@@ -172,7 +169,6 @@ table/block_based/block_based_table_factory.cc
 table/block_based/block_based_table_iterator.cc
 table/block_based/block_based_table_reader.cc
 table/block_based/block_builder.cc
-table/block_based/block_cache.cc
 table/block_based/block_prefetcher.cc
 table/block_based/block_prefix_index.cc
 table/block_based/data_block_hash_index.cc
@@ -198,7 +194,6 @@ table/format.cc
 table/get_context.cc
 table/iterator.cc
 table/merging_iterator.cc
-table/compaction_merging_iterator.cc
 table/meta_blocks.cc
 table/persistent_cache_helper.cc
 table/plain/plain_table_bloom.cc
@@ -235,7 +230,6 @@ util/compression_context_cache.cc
 util/concurrent_task_limiter_impl.cc
 util/crc32c.cc
 util/crc32c_arm64.cc
-util/data_structure.cc
 util/dynamic_bloom.cc
 util/hash.cc
 util/murmurhash.cc
@@ -273,6 +267,7 @@ utilities/env_timed.cc
 utilities/fault_injection_env.cc
 utilities/fault_injection_fs.cc
 utilities/fault_injection_secondary_cache.cc
+utilities/injection_fs.cc
 utilities/leveldb_options/leveldb_options.cc
 utilities/memory/memory_util.cc
 utilities/merge_operators.cc
@@ -283,6 +278,7 @@ utilities/merge_operators/string_append/stringappend.cc
 utilities/merge_operators/string_append/stringappend2.cc
 utilities/merge_operators/uint64add.cc
 utilities/merge_operators/bytesxor.cc
+utilities/nosync_fs.cc
 utilities/object_registry.cc
 utilities/option_change_migration/option_change_migration.cc
 utilities/options/options_util.cc
