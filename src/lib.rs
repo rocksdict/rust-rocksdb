@@ -133,7 +133,7 @@ pub use crate::{
     write_batch::{WriteBatch, WriteBatchIterator, WriteBatchWithTransaction},
 };
 
-use librocksdb_sys as ffi;
+use libspeedb_sys as ffi;
 
 use std::error;
 use std::fmt;
