@@ -25,6 +25,7 @@ use rocksdb::{
     DBWithThreadMode, Env, Error, ErrorKind, FifoCompactOptions, IteratorMode, MultiThreaded,
     Options, PerfContext, PerfMetric, ReadOptions, SingleThreaded, SliceTransform, Snapshot,
     UniversalCompactOptions, UniversalCompactionStopStyle, WriteBatch, DB,
+    DEFAULT_COLUMN_FAMILY_NAME,
 };
 use util::{assert_iter, pair, DBPath};
 
@@ -376,6 +377,36 @@ fn set_option_cf_test() {
 }
 
 #[test]
+fn set_column_family_metadata_test() {
+    let path = DBPath::new("_set_column_family_metadata_test");
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        let db = DB::open_cf(&opts, &path, vec![DEFAULT_COLUMN_FAMILY_NAME, "cf2"]).unwrap();
+
+        let cf1 = db.cf_handle(DEFAULT_COLUMN_FAMILY_NAME).unwrap();
+        db.put_cf(&cf1, b"key1", b"value").unwrap();
+
+        let cf2 = db.cf_handle("cf2").unwrap();
+        db.put_cf(&cf2, b"key1", b"value").unwrap();
+        db.put_cf(&cf2, b"key2", b"value").unwrap();
+        db.put_cf(&cf2, b"key3", b"value").unwrap();
+
+        db.flush_cf(&cf1).unwrap();
+        db.flush_cf(&cf2).unwrap();
+
+        let default_cf_metadata = db.get_column_family_metadata();
+        assert_eq!(default_cf_metadata.size > 150, true);
+        assert_eq!(default_cf_metadata.file_count, 1);
+
+        let cf2_metadata = db.get_column_family_metadata_cf(&cf2);
+        assert_eq!(cf2_metadata.size > default_cf_metadata.size, true);
+        assert_eq!(cf2_metadata.file_count, 1);
+    }
+}
+
+#[test]
 fn test_sequence_number() {
     let path = DBPath::new("_rust_rocksdb_test_sequence_number");
     {
@@ -719,6 +750,7 @@ fn fifo_compaction_test() {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
+        opts.set_level_compaction_dynamic_level_bytes(false);
 
         // set compaction style
         {
@@ -752,7 +784,7 @@ fn fifo_compaction_test() {
         let livefiles = db.live_files().unwrap();
         assert_eq!(livefiles.len(), 1);
         livefiles.iter().for_each(|f| {
-            assert_eq!(f.level, 1);
+            assert_eq!(f.level, 6);
             assert_eq!(f.column_family_name, "cf1");
             assert!(!f.name.is_empty());
             assert_eq!(f.start_key.as_ref().unwrap().as_slice(), "k1".as_bytes());
@@ -844,6 +876,7 @@ fn get_with_cache_and_bulkload_test() {
     opts.set_db_log_dir(&log_path);
     opts.set_memtable_whole_key_filtering(true);
     opts.set_dump_malloc_stats(true);
+    opts.set_level_compaction_dynamic_level_bytes(false);
 
     // trigger all sst files in L1/2 instead of L0
     opts.set_max_bytes_for_level_base(64 << 10); // 64KB
@@ -979,6 +1012,7 @@ fn get_with_cache_and_bulkload_and_blobs_test() {
     opts.set_dump_malloc_stats(true);
     opts.set_enable_blob_files(true);
     opts.set_min_blob_size(256); // set small to ensure it is actually used
+    opts.set_level_compaction_dynamic_level_bytes(false);
 
     // trigger all sst files in L1/2 instead of L0
     opts.set_max_bytes_for_level_base(64 << 10); // 64KB
@@ -1395,5 +1429,50 @@ fn cuckoo() {
         assert_eq!(r.unwrap().unwrap(), b"v2");
         assert!(db.delete(b"k1").is_ok());
         assert!(db.get(b"k1").unwrap().is_none());
+    }
+}
+
+#[test]
+fn test_atomic_flush_cfs() {
+    let n = DBPath::new("_rust_rocksdb_atomic_flush_cfs");
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        opts.set_atomic_flush(true);
+
+        let db = DB::open_cf(&opts, &n, ["cf1", "cf2"]).unwrap();
+        let cf1 = db.cf_handle("cf1").unwrap();
+        let cf2 = db.cf_handle("cf2").unwrap();
+
+        let mut write_options = rocksdb::WriteOptions::new();
+        write_options.disable_wal(true);
+
+        db.put_cf_opt(&cf1, "k11", "v11", &write_options).unwrap();
+        db.put_cf_opt(&cf2, "k21", "v21", &write_options).unwrap();
+
+        let mut opts = rocksdb::FlushOptions::new();
+        opts.set_wait(true);
+        db.flush_cfs_opt(&[&cf1, &cf2], &opts).unwrap();
+    }
+
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        opts.set_atomic_flush(true);
+
+        let db = DB::open_cf(&opts, &n, ["cf1", "cf2"]).unwrap();
+        let cf1 = db.cf_handle("cf1").unwrap();
+        let cf2 = db.cf_handle("cf2").unwrap();
+
+        assert_eq!(
+            db.get_cf(&cf1, "k11").unwrap(),
+            Some("v11".as_bytes().to_vec())
+        );
+        assert_eq!(
+            db.get_cf(&cf2, "k21").unwrap(),
+            Some("v21".as_bytes().to_vec())
+        );
     }
 }

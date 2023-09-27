@@ -89,6 +89,7 @@ mod env;
 mod iter_range;
 pub mod merge_operator;
 pub mod perf;
+mod prop_name;
 pub mod properties;
 mod slice_transform;
 mod snapshot;
@@ -114,8 +115,9 @@ pub use crate::{
         BlockBasedIndexType, BlockBasedOptions, BottommostLevelCompaction, Cache, ChecksumType,
         CompactOptions, CuckooTableOptions, DBCompactionStyle, DBCompressionType, DBPath,
         DBRecoveryMode, DataBlockIndexType, FifoCompactOptions, FlushOptions,
-        IngestExternalFileOptions, LogLevel, MemtableFactory, Options, PlainTableFactoryOptions,
-        ReadOptions, UniversalCompactOptions, UniversalCompactionStopStyle, WriteOptions,
+        IngestExternalFileOptions, KeyEncodingType, LogLevel, MemtableFactory, Options,
+        PlainTableFactoryOptions, ReadOptions, UniversalCompactOptions,
+        UniversalCompactionStopStyle, WriteOptions,
     },
     db_pinnable_slice::DBPinnableSlice,
     env::Env,

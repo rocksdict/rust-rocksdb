@@ -2,7 +2,7 @@ name: RocksDB CI
 
 on: [push, pull_request]
 env:
-  RUST_VERSION: 1.60.0
+  RUST_VERSION: 1.63.0
 
 jobs:
   fmt:
@@ -104,6 +104,8 @@ jobs:
         run: |
           cargo test --all
           cargo test --all --features multi-threaded-cf
+      - name: Free disk space
+        run: cargo clean
       - name: Run rocksdb tests (jemalloc)
         if: runner.os != 'Windows'
         run: cargo test --all --features jemalloc

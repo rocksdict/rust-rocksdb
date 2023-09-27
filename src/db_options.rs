@@ -410,7 +410,7 @@ impl BlockBasedOptions {
     }
 
     /// Sets global cache for blocks (user data is stored in a set of blocks, and
-    /// a block is the unit of reading from disk). Cache must outlive DB instance which uses it.
+    /// a block is the unit of reading from disk).
     ///
     /// If set, use the specified cache for blocks.
     /// By default, rocksdb will automatically create and use an 8MB internal cache.
@@ -2438,7 +2438,7 @@ impl Options {
     /// # Examples
     ///
     /// ```
-    /// use rocksdb::{Options, PlainTableFactoryOptions};
+    /// use rocksdb::{KeyEncodingType, Options, PlainTableFactoryOptions};
     ///
     /// let mut opts = Options::default();
     /// let factory_opts = PlainTableFactoryOptions {
@@ -2446,6 +2446,10 @@ impl Options {
     ///   bloom_bits_per_key: 20,
     ///   hash_table_ratio: 0.75,
     ///   index_sparseness: 16,
+    ///   huge_page_tlb_size: 0,
+    ///   encoding_type: KeyEncodingType::Plain,
+    ///   full_scan_mode: false,
+    ///   store_index_in_file: false,
     /// };
     ///
     /// opts.set_plain_table_factory(&factory_opts);
@@ -2458,6 +2462,10 @@ impl Options {
                 options.bloom_bits_per_key,
                 options.hash_table_ratio,
                 options.index_sparseness,
+                options.huge_page_tlb_size,
+                options.encoding_type as c_char,
+                c_uchar::from(options.full_scan_mode),
+                c_uchar::from(options.store_index_in_file),
             );
         }
     }
@@ -2541,7 +2549,7 @@ impl Options {
 
             // Must have valid UTF-8 format.
             let s = CStr::from_ptr(value).to_str().unwrap().to_owned();
-            libc::free(value as *mut c_void);
+            ffi::rocksdb_free(value as *mut c_void);
             Some(s)
         }
     }
@@ -2832,7 +2840,7 @@ impl Options {
         }
     }
 
-    /// Sets global cache for table-level rows. Cache must outlive DB instance which uses it.
+    /// Sets global cache for table-level rows.
     ///
     /// Default: null (disabled)
     /// Not supported in ROCKSDB_LITE mode!
@@ -3066,6 +3074,24 @@ impl Options {
     pub fn set_blob_compaction_readahead_size(&mut self, val: u64) {
         unsafe {
             ffi::rocksdb_options_set_blob_compaction_readahead_size(self.inner, val);
+        }
+    }
+
+    /// Set this option to true during creation of database if you want
+    /// to be able to ingest behind (call IngestExternalFile() skipping keys
+    /// that already exist, rather than overwriting matching keys).
+    /// Setting this option to true has the following effects:
+    /// 1) Disable some internal optimizations around SST file compression.
+    /// 2) Reserve the last level for ingested files only.
+    /// 3) Compaction will not include any file from the last level.
+    /// Note that only Universal Compaction supports allow_ingest_behind.
+    /// `num_levels` should be >= 3 if this option is turned on.
+    ///
+    /// DEFAULT: false
+    /// Immutable.
+    pub fn set_allow_ingest_behind(&mut self, val: bool) {
+        unsafe {
+            ffi::rocksdb_options_set_allow_ingest_behind(self.inner, c_uchar::from(val));
         }
     }
 }
@@ -3590,6 +3616,21 @@ pub enum ChecksumType {
     XXH3 = 4, // Supported since RocksDB 6.27
 }
 
+/// Used in [`PlainTableFactoryOptions`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum KeyEncodingType {
+    /// Always write full keys.
+    Plain = 0,
+    /// Find opportunities to write the same prefix for multiple rows.
+    Prefix = 1,
+}
+
+impl Default for KeyEncodingType {
+    fn default() -> Self {
+        KeyEncodingType::Plain
+    }
+}
+
 /// Used with DBOptions::set_plain_table_factory.
 /// See official [wiki](https://github.com/facebook/rocksdb/wiki/PlainTable-Format) for more
 /// information.
@@ -3599,11 +3640,19 @@ pub enum ChecksumType {
 ///  bloom_bits_per_key: 10
 ///  hash_table_ratio: 0.75
 ///  index_sparseness: 16
+///  huge_page_tlb_size: 0
+///  encoding_type: KeyEncodingType::Plain
+///  full_scan_mode: false
+///  store_index_in_file: false
 pub struct PlainTableFactoryOptions {
     pub user_key_length: u32,
     pub bloom_bits_per_key: i32,
     pub hash_table_ratio: f64,
     pub index_sparseness: usize,
+    pub huge_page_tlb_size: usize,
+    pub encoding_type: KeyEncodingType,
+    pub full_scan_mode: bool,
+    pub store_index_in_file: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -921,6 +921,28 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         Ok(())
     }
 
+    /// Flushes multiple column families.
+    ///
+    /// If atomic flush is not enabled, it is equivalent to calling flush_cf multiple times.
+    /// If atomic flush is enabled, it will flush all column families specified in `cfs` up to the latest sequence
+    /// number at the time when flush is requested.
+    pub fn flush_cfs_opt(
+        &self,
+        cfs: &[&impl AsColumnFamilyRef],
+        opts: &FlushOptions,
+    ) -> Result<(), Error> {
+        let mut cfs = cfs.iter().map(|cf| cf.inner()).collect::<Vec<_>>();
+        unsafe {
+            ffi_try!(ffi::rocksdb_flush_cfs(
+                self.inner.inner(),
+                opts.inner,
+                cfs.as_mut_ptr(),
+                cfs.len() as libc::c_int,
+            ));
+        }
+        Ok(())
+    }
+
     /// Flushes database memtables to SST files on the disk for a given column family using default
     /// options.
     pub fn flush_cf(&self, cf: &impl AsColumnFamilyRef) -> Result<(), Error> {
@@ -1157,23 +1179,23 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
     /// Return the values associated with the given keys and the specified column family
     /// where internally the read requests are processed in batch if block-based table
     /// SST format is used.  It is a more optimized version of multi_get_cf.
-    pub fn batched_multi_get_cf<K, I>(
+    pub fn batched_multi_get_cf<'a, K, I>(
         &self,
         cf: &impl AsColumnFamilyRef,
         keys: I,
         sorted_input: bool,
     ) -> Vec<Result<Option<DBPinnableSlice>, Error>>
     where
-        K: AsRef<[u8]>,
-        I: IntoIterator<Item = K>,
+        K: AsRef<[u8]> + 'a + ?Sized,
+        I: IntoIterator<Item = &'a K>,
     {
         self.batched_multi_get_cf_opt(cf, keys, sorted_input, &ReadOptions::default())
     }
 
     /// Return the values associated with the given keys and the specified column family
     /// where internally the read requests are processed in batch if block-based table
-    /// SST format is used.  It is a more optimized version of multi_get_cf_opt.
-    pub fn batched_multi_get_cf_opt<K, I>(
+    /// SST format is used. It is a more optimized version of multi_get_cf_opt.
+    pub fn batched_multi_get_cf_opt<'a, K, I>(
         &self,
         cf: &impl AsColumnFamilyRef,
         keys: I,
@@ -1181,14 +1203,16 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         readopts: &ReadOptions,
     ) -> Vec<Result<Option<DBPinnableSlice>, Error>>
     where
-        K: AsRef<[u8]>,
-        I: IntoIterator<Item = K>,
+        K: AsRef<[u8]> + 'a + ?Sized,
+        I: IntoIterator<Item = &'a K>,
     {
-        let (keys, keys_sizes): (Vec<Box<[u8]>>, Vec<_>) = keys
+        let (ptr_keys, keys_sizes): (Vec<_>, Vec<_>) = keys
             .into_iter()
-            .map(|k| (Box::from(k.as_ref()), k.as_ref().len()))
+            .map(|k| {
+                let k = k.as_ref();
+                (k.as_ptr() as *const c_char, k.len())
+            })
             .unzip();
-        let ptr_keys: Vec<_> = keys.iter().map(|k| k.as_ptr() as *const c_char).collect();
 
         let mut pinned_values = vec![ptr::null_mut(); ptr_keys.len()];
         let mut errors = vec![ptr::null_mut(); ptr_keys.len()];
@@ -1796,7 +1820,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
             ))),
         };
         unsafe {
-            libc::free(value as *mut c_void);
+            ffi::rocksdb_free(value as *mut c_void);
         }
         result
     }
@@ -1989,6 +2013,47 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         }
     }
 
+    /// Obtains the LSM-tree meta data of the default column family of the DB
+    pub fn get_column_family_metadata(&self) -> ColumnFamilyMetaData {
+        unsafe {
+            let ptr = ffi::rocksdb_get_column_family_metadata(self.inner.inner());
+
+            let metadata = ColumnFamilyMetaData {
+                size: ffi::rocksdb_column_family_metadata_get_size(ptr),
+                name: from_cstr(ffi::rocksdb_column_family_metadata_get_name(ptr)),
+                file_count: ffi::rocksdb_column_family_metadata_get_file_count(ptr),
+            };
+
+            // destroy
+            ffi::rocksdb_column_family_metadata_destroy(ptr);
+
+            // return
+            metadata
+        }
+    }
+
+    /// Obtains the LSM-tree meta data of the specified column family of the DB
+    pub fn get_column_family_metadata_cf(
+        &self,
+        cf: &impl AsColumnFamilyRef,
+    ) -> ColumnFamilyMetaData {
+        unsafe {
+            let ptr = ffi::rocksdb_get_column_family_metadata_cf(self.inner.inner(), cf.inner());
+
+            let metadata = ColumnFamilyMetaData {
+                size: ffi::rocksdb_column_family_metadata_get_size(ptr),
+                name: from_cstr(ffi::rocksdb_column_family_metadata_get_name(ptr)),
+                file_count: ffi::rocksdb_column_family_metadata_get_file_count(ptr),
+            };
+
+            // destroy
+            ffi::rocksdb_column_family_metadata_destroy(ptr);
+
+            // return
+            metadata
+        }
+    }
+
     /// Returns a list of all table files with their level, start key
     /// and end key
     pub fn live_files(&self) -> Result<Vec<LiveFile>, Error> {
@@ -2177,6 +2242,18 @@ impl<T: ThreadMode, I: DBInner> fmt::Debug for DBCommon<T, I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "RocksDB {{ path: {:?} }}", self.path())
     }
+}
+
+/// The metadata that describes a column family.
+#[derive(Debug, Clone)]
+pub struct ColumnFamilyMetaData {
+    // The size of this column family in bytes, which is equal to the sum of
+    // the file size of its "levels".
+    pub size: u64,
+    // The name of the column family.
+    pub name: String,
+    // The number of files in this column family.
+    pub file_count: usize,
 }
 
 /// The metadata that describes a SST file
