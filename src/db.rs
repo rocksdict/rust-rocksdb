@@ -2232,6 +2232,16 @@ impl<I: DBInner> DBCommon<MultiThreaded, I> {
     }
 }
 
+impl<I: DBInner> DBCommon<MultiThreaded, I> {
+    /// Returns the underlying column family handle
+    ///
+    /// This is dangerous, since it does not have lifetime guarantees.
+    /// Must ensure that the handle is dropped before db is dropped.
+    pub unsafe fn cf_handle_unbounded(&self, name: &str) -> Option<Arc<UnboundColumnFamily>> {
+        self.cfs.cfs.read().unwrap().get(name).cloned()
+    }
+}
+
 impl<T: ThreadMode, I: DBInner> Drop for DBCommon<T, I> {
     fn drop(&mut self) {
         self.cfs.drop_all_cfs_internal();

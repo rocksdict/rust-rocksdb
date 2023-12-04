@@ -68,7 +68,7 @@ pub struct BoundColumnFamily<'a> {
 // but its memory will be exposed after transmute()-ing to BoundColumnFamily.
 // ColumnFamily's lifetime should be bound to DB. But, db holds cfs and cfs can't easily
 // self-reference DB as its lifetime due to rust's type system
-pub(crate) struct UnboundColumnFamily {
+pub struct UnboundColumnFamily {
     pub(crate) inner: *mut ffi::rocksdb_column_family_handle_t,
 }
 
@@ -140,6 +140,12 @@ impl<'a> AsColumnFamilyRef for &'a ColumnFamily {
 // Also, ColumnFamilyRef might not be Arc<BoundColumnFamily<'a>> depending crate
 // feature flags so, we can't use the type alias here.
 impl<'a> AsColumnFamilyRef for Arc<BoundColumnFamily<'a>> {
+    fn inner(&self) -> *mut ffi::rocksdb_column_family_handle_t {
+        self.inner
+    }
+}
+
+impl AsColumnFamilyRef for Arc<UnboundColumnFamily> {
     fn inner(&self) -> *mut ffi::rocksdb_column_family_handle_t {
         self.inner
     }
