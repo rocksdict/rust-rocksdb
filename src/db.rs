@@ -19,7 +19,7 @@ use crate::{
     column_family::UnboundColumnFamily,
     db_options::OptionsMustOutliveDB,
     ffi,
-    ffi_util::{from_cstr, opt_bytes_to_ptr, raw_data, to_cpath, CStrLike},
+    ffi_util::{from_cstr, opt_bytes_to_ptr, raw_data, to_cpath, CSlice, CStrLike},
     ColumnFamily, ColumnFamilyDescriptor, CompactOptions, DBIteratorWithThreadMode,
     DBPinnableSlice, DBRawIteratorWithThreadMode, DBWALIterator, Direction, Error, FlushOptions,
     IngestExternalFileOptions, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode,
