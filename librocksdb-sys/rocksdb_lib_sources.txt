@@ -10,6 +10,7 @@ cache/compressed_secondary_cache.cc
 cache/secondary_cache.cc
 cache/secondary_cache_adapter.cc
 cache/sharded_cache.cc
+cache/tiered_secondary_cache.cc
 db/arena_wrapped_db_iter.cc
 db/blob/blob_contents.cc
 db/blob/blob_fetcher.cc
@@ -92,6 +93,7 @@ db/wal_edit.cc
 db/wal_manager.cc
 db/wide/wide_column_serialization.cc
 db/wide/wide_columns.cc
+db/wide/wide_columns_helper.cc
 db/write_batch.cc
 db/write_batch_base.cc
 db/write_controller.cc
@@ -157,6 +159,12 @@ options/options_helper.cc
 options/options_parser.cc
 port/mmap.cc
 port/port_posix.cc
+port/win/env_default.cc
+port/win/env_win.cc
+port/win/io_win.cc
+port/win/port_win.cc
+port/win/win_logger.cc
+port/win/win_thread.cc
 port/stack_trace.cc
 table/adaptive/adaptive_table_factory.cc
 table/block_based/binary_search_index_reader.cc
@@ -311,3 +319,4 @@ utilities/ttl/db_ttl_impl.cc
 utilities/wal_filter.cc
 utilities/write_batch_with_index/write_batch_with_index.cc
 utilities/write_batch_with_index/write_batch_with_index_internal.cc
+
