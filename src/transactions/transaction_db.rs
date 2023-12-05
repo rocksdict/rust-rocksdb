@@ -952,13 +952,13 @@ impl TransactionDB<SingleThreaded> {
         let inner = self.create_inner_cf_handle(name.as_ref(), opts)?;
         self.cfs
             .cfs
-            .insert(name.as_ref().to_string(), Arc::new(ColumnFamily { inner }));
+            .insert(name.as_ref().to_string(), ColumnFamily { inner });
         Ok(())
     }
 
     /// Returns the underlying column family handle.
-    pub fn cf_handle(&self, name: &str) -> Option<Arc<ColumnFamily>> {
-        self.cfs.cfs.get(name).map(Clone::clone)
+    pub fn cf_handle(&self, name: &str) -> Option<&ColumnFamily> {
+        self.cfs.cfs.get(name)
     }
 
     /// Drops the column family with the given name

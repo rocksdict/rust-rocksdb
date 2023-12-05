@@ -68,7 +68,7 @@ pub trait ThreadMode {
 ///
 /// See [`DB`] for more details, including performance implications for each mode
 pub struct SingleThreaded {
-    pub(crate) cfs: BTreeMap<String, Arc<ColumnFamily>>,
+    pub(crate) cfs: BTreeMap<String, ColumnFamily>,
 }
 
 /// Actual marker type for the marker trait `ThreadMode`, which holds
@@ -87,7 +87,7 @@ impl ThreadMode for SingleThreaded {
         Self {
             cfs: cfs
                 .into_iter()
-                .map(|(n, c)| (n, Arc::new(ColumnFamily { inner: c })))
+                .map(|(n, c)| (n, ColumnFamily { inner: c }))
                 .collect(),
         }
     }
@@ -2180,7 +2180,7 @@ impl<I: DBInner> DBCommon<SingleThreaded, I> {
         let inner = self.create_inner_cf_handle(name.as_ref(), opts)?;
         self.cfs
             .cfs
-            .insert(name.as_ref().to_string(), Arc::new(ColumnFamily { inner }));
+            .insert(name.as_ref().to_string(), ColumnFamily { inner });
         Ok(())
     }
 
@@ -2194,8 +2194,8 @@ impl<I: DBInner> DBCommon<SingleThreaded, I> {
     }
 
     /// Returns the underlying column family handle
-    pub fn cf_handle(&self, name: &str) -> Option<Arc<ColumnFamily>> {
-        self.cfs.cfs.get(name).map(Clone::clone)
+    pub fn cf_handle(&self, name: &str) -> Option<&ColumnFamily> {
+        self.cfs.cfs.get(name)
     }
 }
 

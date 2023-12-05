@@ -53,20 +53,20 @@ fn open_cf() {
         let cf2 = db.cf_handle("cf2").unwrap();
 
         db.put(b"k0", b"v0").unwrap();
-        db.put_cf(cf1.as_ref(), b"k1", b"v1").unwrap();
-        db.put_cf(cf2.as_ref(), b"k2", b"v2").unwrap();
+        db.put_cf(&cf1, b"k1", b"v1").unwrap();
+        db.put_cf(&cf2, b"k2", b"v2").unwrap();
 
         assert_eq!(db.get(b"k0").unwrap().unwrap(), b"v0");
         assert!(db.get(b"k1").unwrap().is_none());
         assert!(db.get(b"k2").unwrap().is_none());
 
-        assert!(db.get_cf(cf1.as_ref(), b"k0").unwrap().is_none());
-        assert_eq!(db.get_cf(cf1.as_ref(), b"k1").unwrap().unwrap(), b"v1");
-        assert!(db.get_cf(cf1.as_ref(), b"k2").unwrap().is_none());
+        assert!(db.get_cf(&cf1, b"k0").unwrap().is_none());
+        assert_eq!(db.get_cf(&cf1, b"k1").unwrap().unwrap(), b"v1");
+        assert!(db.get_cf(&cf1, b"k2").unwrap().is_none());
 
-        assert!(db.get_cf(cf2.as_ref(), b"k0").unwrap().is_none());
-        assert!(db.get_cf(cf2.as_ref(), b"k1").unwrap().is_none());
-        assert_eq!(db.get_cf(cf2.as_ref(), b"k2").unwrap().unwrap(), b"v2");
+        assert!(db.get_cf(&cf2, b"k0").unwrap().is_none());
+        assert!(db.get_cf(&cf2, b"k1").unwrap().is_none());
+        assert_eq!(db.get_cf(&cf2, b"k2").unwrap().unwrap(), b"v2");
     }
 }
 
