@@ -121,7 +121,7 @@ pub use crate::{
     },
     db_pinnable_slice::DBPinnableSlice,
     env::Env,
-    ffi_util::{CSlice, CStrLike},
+    ffi_util::CStrLike,
     iter_range::{IterateBounds, PrefixRange},
     merge_operator::MergeOperands,
     perf::{PerfContext, PerfMetric, PerfStatsLevel},
