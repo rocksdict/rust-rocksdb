@@ -289,15 +289,19 @@ impl<'a, D: DBAccess> DBRawIteratorWithThreadMode<'a, D> {
 
     /// Seeks to the next key.
     pub fn next(&mut self) {
-        unsafe {
-            ffi::rocksdb_iter_next(self.inner.as_ptr());
+        if self.valid() {
+            unsafe {
+                ffi::rocksdb_iter_next(self.inner.as_ptr());
+            }
         }
     }
 
     /// Seeks to the previous key.
     pub fn prev(&mut self) {
-        unsafe {
-            ffi::rocksdb_iter_prev(self.inner.as_ptr());
+        if self.valid() {
+            unsafe {
+                ffi::rocksdb_iter_prev(self.inner.as_ptr());
+            }
         }
     }
 
@@ -554,7 +558,7 @@ impl Iterator for DBWALIterator {
 
         // if the initial sequence number is what was requested we skip it to
         // only provide changes *after* it
-        if seq == self.start_seq_number {
+        while seq <= self.start_seq_number {
             unsafe {
                 ffi::rocksdb_wal_iter_next(self.inner);
             }

@@ -294,6 +294,7 @@ unsafe impl Send for CuckooTableOptions {}
 unsafe impl Send for ReadOptions {}
 unsafe impl Send for IngestExternalFileOptions {}
 unsafe impl Send for CacheWrapper {}
+unsafe impl Send for CompactOptions {}
 
 // Sync is similarly safe for many types because they do not expose interior mutability, and their
 // use within the rocksdb library is generally behind a const reference
@@ -304,6 +305,7 @@ unsafe impl Sync for CuckooTableOptions {}
 unsafe impl Sync for ReadOptions {}
 unsafe impl Sync for IngestExternalFileOptions {}
 unsafe impl Sync for CacheWrapper {}
+unsafe impl Sync for CompactOptions {}
 
 impl Drop for Options {
     fn drop(&mut self) {
@@ -564,10 +566,10 @@ impl BlockBasedOptions {
 
     /// Format version, reserved for backward compatibility.
     ///
-    /// See full [list](https://github.com/facebook/rocksdb/blob/f059c7d9b96300091e07429a60f4ad55dac84859/include/rocksdb/table.h#L249-L274)
+    /// See full [list](https://github.com/facebook/rocksdb/blob/v8.6.7/include/rocksdb/table.h#L493-L521)
     /// of the supported versions.
     ///
-    /// Default: 2.
+    /// Default: 5.
     pub fn set_format_version(&mut self, version: i32) {
         unsafe {
             ffi::rocksdb_block_based_options_set_format_version(self.inner, version);
@@ -652,6 +654,31 @@ impl BlockBasedOptions {
     pub fn set_checksum_type(&mut self, checksum_type: ChecksumType) {
         unsafe {
             ffi::rocksdb_block_based_options_set_checksum(self.inner, checksum_type as c_char);
+        }
+    }
+
+    /// If true, generate Bloom/Ribbon filters that minimize memory internal
+    /// fragmentation.
+    /// See official [wiki](
+    /// https://github.com/facebook/rocksdb/wiki/RocksDB-Bloom-Filter#reducing-internal-fragmentation)
+    /// for more information.
+    ///
+    /// Defaults to false.
+    /// # Examples
+    ///
+    /// ```
+    /// use rocksdb::BlockBasedOptions;
+    ///
+    /// let mut opts = BlockBasedOptions::default();
+    /// opts.set_bloom_filter(10.0, true);
+    /// opts.set_optimize_filters_for_memory(true);
+    /// ```
+    pub fn set_optimize_filters_for_memory(&mut self, v: bool) {
+        unsafe {
+            ffi::rocksdb_block_based_options_set_optimize_filters_for_memory(
+                self.inner,
+                c_uchar::from(v),
+            );
         }
     }
 }
@@ -1028,11 +1055,60 @@ impl Options {
         }
     }
 
+    /// Number of threads for parallel compression.
+    /// Parallel compression is enabled only if threads > 1.
+    /// THE FEATURE IS STILL EXPERIMENTAL
+    ///
+    /// See [code](https://github.com/facebook/rocksdb/blob/v8.6.7/include/rocksdb/advanced_options.h#L116-L127)
+    /// for more information.
+    ///
+    /// Default: 1
+    ///
+    /// Examples
+    ///
+    /// ```
+    /// use rocksdb::{Options, DBCompressionType};
+    ///
+    /// let mut opts = Options::default();
+    /// opts.set_compression_type(DBCompressionType::Zstd);
+    /// opts.set_compression_options_parallel_threads(3);
+    /// ```
+    pub fn set_compression_options_parallel_threads(&mut self, num: i32) {
+        unsafe {
+            ffi::rocksdb_options_set_compression_options_parallel_threads(self.inner, num);
+        }
+    }
+
+    /// Sets the compression algorithm that will be used for compressing WAL.
+    ///
+    /// At present, only ZSTD compression is supported!
+    ///
+    /// Default: `DBCompressionType::None`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rocksdb::{Options, DBCompressionType};
+    ///
+    /// let mut opts = Options::default();
+    /// opts.set_wal_compression_type(DBCompressionType::Zstd);
+    /// // Or None to disable it
+    /// opts.set_wal_compression_type(DBCompressionType::None);
+    /// ```
+    pub fn set_wal_compression_type(&mut self, t: DBCompressionType) {
+        match t {
+            DBCompressionType::None | DBCompressionType::Zstd => unsafe {
+                ffi::rocksdb_options_set_wal_compression(self.inner, t as c_int);
+            },
+            other => unimplemented!("{:?} is not supported for WAL compression", other),
+        }
+    }
+
     /// Sets the bottom-most compression algorithm that will be used for
     /// compressing blocks at the bottom-most level.
     ///
-    /// Note that to actually unable bottom-most compression configuration after
-    /// setting the compression type it needs to be enabled by calling
+    /// Note that to actually enable bottom-most compression configuration after
+    /// setting the compression type, it needs to be enabled by calling
     /// [`set_bottommost_compression_options`](#method.set_bottommost_compression_options) or
     /// [`set_bottommost_zstd_max_train_bytes`](#method.set_bottommost_zstd_max_train_bytes) method with `enabled` argument
     /// set to `true`.
@@ -1198,10 +1274,7 @@ impl Options {
     /// running RocksDB on spinning disks, you should set this to at least 2MB.
     /// That way RocksDB's compaction is doing sequential instead of random reads.
     ///
-    /// When non-zero, we also force new_table_reader_for_compaction_inputs to
-    /// true.
-    ///
-    /// Default: `0`
+    /// Default: 2 * 1024 * 1024 (2 MB)
     pub fn set_compaction_readahead_size(&mut self, compaction_readahead_size: usize) {
         unsafe {
             ffi::rocksdb_options_compaction_readahead_size(self.inner, compaction_readahead_size);
@@ -1219,6 +1292,55 @@ impl Options {
                 self.inner,
                 c_uchar::from(v),
             );
+        }
+    }
+
+    /// This option has different meanings for different compaction styles:
+    ///
+    /// Leveled: files older than `periodic_compaction_seconds` will be picked up
+    /// for compaction and will be re-written to the same level as they were
+    /// before.
+    ///
+    /// FIFO: not supported. Setting this option has no effect for FIFO compaction.
+    ///
+    /// Universal: when there are files older than `periodic_compaction_seconds`,
+    /// rocksdb will try to do as large a compaction as possible including the
+    /// last level. Such compaction is only skipped if only last level is to
+    /// be compacted and no file in last level is older than
+    /// `periodic_compaction_seconds`. See more in
+    /// UniversalCompactionBuilder::PickPeriodicCompaction().
+    /// For backward compatibility, the effective value of this option takes
+    /// into account the value of option `ttl`. The logic is as follows:
+    ///    - both options are set to 30 days if they have the default value.
+    ///    - if both options are zero, zero is picked. Otherwise, we take the min
+    ///    value among non-zero options values (i.e. takes the stricter limit).
+    ///
+    /// One main use of the feature is to make sure a file goes through compaction
+    /// filters periodically. Users can also use the feature to clear up SST
+    /// files using old format.
+    ///
+    /// A file's age is computed by looking at file_creation_time or creation_time
+    /// table properties in order, if they have valid non-zero values; if not, the
+    /// age is based on the file's last modified time (given by the underlying
+    /// Env).
+    ///
+    /// This option only supports block based table format for any compaction
+    /// style.
+    ///
+    /// unit: seconds. Ex: 7 days = 7 * 24 * 60 * 60
+    ///
+    /// Values:
+    /// 0: Turn off Periodic compactions.
+    /// UINT64_MAX - 1 (0xfffffffffffffffe) is special flag to allow RocksDB to
+    /// pick default.
+    ///
+    /// Default: 30 days if using block based table format + compaction filter +
+    /// leveled compaction or block based table format + universal compaction.
+    /// 0 (disabled) otherwise.
+    ///
+    pub fn set_periodic_compaction_seconds(&mut self, secs: u64) {
+        unsafe {
+            ffi::rocksdb_options_set_periodic_compaction_seconds(self.inner, secs);
         }
     }
 
@@ -3094,6 +3216,31 @@ impl Options {
             ffi::rocksdb_options_set_allow_ingest_behind(self.inner, c_uchar::from(val));
         }
     }
+
+    // A factory of a table property collector that marks an SST
+    // file as need-compaction when it observe at least "D" deletion
+    // entries in any "N" consecutive entries, or the ratio of tombstone
+    // entries >= deletion_ratio.
+    //
+    // `window_size`: is the sliding window size "N"
+    // `num_dels_trigger`: is the deletion trigger "D"
+    // `deletion_ratio`: if <= 0 or > 1, disable triggering compaction based on
+    // deletion ratio.
+    pub fn add_compact_on_deletion_collector_factory(
+        &mut self,
+        window_size: size_t,
+        num_dels_trigger: size_t,
+        deletion_ratio: f64,
+    ) {
+        unsafe {
+            ffi::rocksdb_options_add_compact_on_deletion_collector_factory_del_ratio(
+                self.inner,
+                window_size,
+                num_dels_trigger,
+                deletion_ratio,
+            );
+        }
+    }
 }
 
 impl Default for Options {
@@ -3451,6 +3598,15 @@ impl ReadOptions {
     pub fn set_readahead_size(&mut self, v: usize) {
         unsafe {
             ffi::rocksdb_readoptions_set_readahead_size(self.inner, v as size_t);
+        }
+    }
+
+    /// Automatically trim readahead size when iterating with an upper bound.
+    ///
+    /// Default: `false`
+    pub fn set_auto_readahead_size(&mut self, v: bool) {
+        unsafe {
+            ffi::rocksdb_readoptions_set_auto_readahead_size(self.inner, c_uchar::from(v));
         }
     }
 
@@ -3921,6 +4077,65 @@ impl CompactOptions {
     pub fn set_target_level(&mut self, lvl: c_int) {
         unsafe {
             ffi::rocksdb_compactoptions_set_target_level(self.inner, lvl);
+        }
+    }
+}
+
+pub struct WaitForCompactOptions {
+    pub(crate) inner: *mut ffi::rocksdb_wait_for_compact_options_t,
+}
+
+impl Default for WaitForCompactOptions {
+    fn default() -> Self {
+        let opts = unsafe { ffi::rocksdb_wait_for_compact_options_create() };
+        assert!(
+            !opts.is_null(),
+            "Could not create RocksDB Wait For Compact Options"
+        );
+
+        Self { inner: opts }
+    }
+}
+
+impl Drop for WaitForCompactOptions {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::rocksdb_wait_for_compact_options_destroy(self.inner);
+        }
+    }
+}
+
+impl WaitForCompactOptions {
+    /// If true, abort waiting if background jobs are paused. If false,
+    /// ContinueBackgroundWork() must be called to resume the background jobs.
+    /// Otherwise, jobs that were queued, but not scheduled yet may never finish
+    /// and WaitForCompact() may wait indefinitely (if timeout is set, it will
+    /// abort after the timeout).
+    ///
+    /// Default: false
+    pub fn set_abort_on_pause(&mut self, v: bool) {
+        unsafe {
+            ffi::rocksdb_wait_for_compact_options_set_abort_on_pause(self.inner, c_uchar::from(v));
+        }
+    }
+
+    /// If true, flush all column families before starting to wait.
+    ///
+    /// Default: false
+    pub fn set_flush(&mut self, v: bool) {
+        unsafe {
+            ffi::rocksdb_wait_for_compact_options_set_flush(self.inner, c_uchar::from(v));
+        }
+    }
+
+    /// Timeout in microseconds for waiting for compaction to complete.
+    /// when timeout == 0, WaitForCompact() will wait as long as there's background
+    /// work to finish.
+    ///
+    /// Default: 0
+    pub fn set_timeout(&mut self, microseconds: u64) {
+        unsafe {
+            ffi::rocksdb_wait_for_compact_options_set_timeout(self.inner, microseconds);
         }
     }
 }
