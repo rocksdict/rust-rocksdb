@@ -134,7 +134,7 @@ pub use crate::{
         OptimisticTransactionDB, OptimisticTransactionOptions, Transaction, TransactionDB,
         TransactionDBOptions, TransactionOptions,
     },
-    wide_columns::{Iterable, PinnableWideColumns, WideColumn},
+    wide_columns::{Iterable, PinnableWideColumns, WideColumn, WideColumns},
     write_batch::{WriteBatch, WriteBatchIterator, WriteBatchWithTransaction},
 };
 
