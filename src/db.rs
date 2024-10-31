@@ -133,6 +133,12 @@ pub struct DBCommon<T: ThreadMode, D: DBInner> {
     _outlive: Vec<OptionsMustOutliveDB>,
 }
 
+impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
+    pub fn inner(&self) -> *mut ffi::rocksdb_t {
+        self.inner.inner()
+    }
+}
+
 /// Minimal set of DB-related methods, intended to be generic over
 /// `DBWithThreadMode<T>`. Mainly used internally
 pub trait DBAccess {
@@ -2505,6 +2511,16 @@ impl<I: DBInner> DBCommon<MultiThreaded, I> {
             .get(name)
             .cloned()
             .map(UnboundColumnFamily::bound_column_family)
+    }
+}
+
+impl<I: DBInner> DBCommon<MultiThreaded, I> {
+    /// Returns the underlying column family handle
+    ///
+    /// This is dangerous, since it does not have lifetime guarantees.
+    /// Must ensure that the handle is dropped before db is dropped.
+    pub unsafe fn cf_handle_unbounded(&self, name: &str) -> Option<Arc<UnboundColumnFamily>> {
+        self.cfs.cfs.read().unwrap().get(name).cloned()
     }
 }
 

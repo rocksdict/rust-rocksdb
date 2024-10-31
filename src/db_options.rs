@@ -289,6 +289,12 @@ pub struct Options {
     pub(crate) outlive: OptionsMustOutliveDB,
 }
 
+impl Options {
+    pub fn inner(&self) -> *mut ffi::rocksdb_options_t {
+        self.inner
+    }
+}
+
 /// Optionally disable WAL or sync for this write.
 ///
 /// # Examples
@@ -362,6 +368,12 @@ pub struct ReadOptions {
     iter_start_ts: Option<Vec<u8>>,
     iterate_upper_bound: Option<Vec<u8>>,
     iterate_lower_bound: Option<Vec<u8>>,
+}
+
+impl ReadOptions {
+    pub fn inner(&self) -> *mut ffi::rocksdb_readoptions_t {
+        self.inner
+    }
 }
 
 /// Configuration of cuckoo-based storage.
