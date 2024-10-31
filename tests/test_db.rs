@@ -21,13 +21,14 @@ use std::{mem, sync::Arc, thread, time::Duration};
 use pretty_assertions::assert_eq;
 
 use rocksdb::statistics::{Histogram, StatsLevel, Ticker};
+use rocksdb::WriteOptions;
 use rocksdb::{
     perf::get_memory_usage_stats, BlockBasedOptions, BottommostLevelCompaction, Cache,
     ColumnFamilyDescriptor, CompactOptions, CuckooTableOptions, DBAccess, DBCompactionStyle,
-    DBWithThreadMode, Env, Error, ErrorKind, FifoCompactOptions, IteratorMode, MultiThreaded,
-    Options, PerfContext, PerfMetric, ReadOptions, SingleThreaded, SliceTransform, Snapshot,
-    UniversalCompactOptions, UniversalCompactionStopStyle, WaitForCompactOptions, WriteBatch, DB,
-    DEFAULT_COLUMN_FAMILY_NAME,
+    DBWithThreadMode, Env, Error, ErrorKind, FifoCompactOptions, Iterable as _, IteratorMode,
+    MultiThreaded, Options, PerfContext, PerfMetric, ReadOptions, SingleThreaded, SliceTransform,
+    Snapshot, UniversalCompactOptions, UniversalCompactionStopStyle, WaitForCompactOptions,
+    WriteBatch, DB, DEFAULT_COLUMN_FAMILY_NAME,
 };
 use util::{assert_iter, pair, DBPath, U64Comparator, U64Timestamp};
 
@@ -242,6 +243,42 @@ fn iterator_test_lower_bound() {
             db.iterator_opt(IteratorMode::Start, readopts),
             &[pair(b"k4", b"v4"), pair(b"k5", b"v5")],
         );
+    }
+}
+
+#[test]
+fn wide_columns_test() {
+    let path = DBPath::new("_rust_rocksdb_widecolumns_test");
+    let opt = WriteOptions::new();
+    {
+        let mut db = DB::open_default(&path).unwrap();
+        db.create_cf("test", &Options::default()).unwrap();
+        let cf = db.cf_handle("test").unwrap();
+
+        let names = &[&b"567"[..], &b"1234"[..]];
+        let values = &[&b"123f4"[..], &b"43d2100"[..]];
+
+        db.put_entity_cf_opt(&cf, b"v1111", names, values, &opt)
+            .unwrap();
+
+        let ropt = ReadOptions::default();
+        let columns = db.get_entity_cf_opt(&cf, b"v1111", &ropt).unwrap().unwrap();
+        let columns = columns.iter().collect::<Vec<_>>();
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].name, names[1]);
+        assert_eq!(columns[0].value, values[1]);
+        assert_eq!(columns[1].name, names[0]);
+        assert_eq!(columns[1].value, values[0]);
+
+        let mut iter = db.raw_iterator_cf(&cf);
+        iter.seek_to_first();
+        let columns = iter.columns().unwrap();
+        let columns = columns.iter().collect::<Vec<_>>();
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].name, names[1]);
+        assert_eq!(columns[0].value, values[1]);
+        assert_eq!(columns[1].name, names[0]);
+        assert_eq!(columns[1].value, values[0]);
     }
 }
 

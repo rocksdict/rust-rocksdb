@@ -96,6 +96,7 @@ mod snapshot;
 mod sst_file_writer;
 pub mod statistics;
 mod transactions;
+mod wide_columns;
 mod write_batch;
 
 pub use crate::{
@@ -133,6 +134,7 @@ pub use crate::{
         OptimisticTransactionDB, OptimisticTransactionOptions, Transaction, TransactionDB,
         TransactionDBOptions, TransactionOptions,
     },
+    wide_columns::{Iterable, PinnableWideColumns},
     write_batch::{WriteBatch, WriteBatchIterator, WriteBatchWithTransaction},
 };
 

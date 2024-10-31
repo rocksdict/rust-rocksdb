@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{ffi, AsColumnFamilyRef};
+use crate::{ffi, AsColumnFamilyRef, Error};
 use libc::{c_char, c_void, size_t};
 use std::slice;
 
@@ -211,6 +211,60 @@ impl<const TRANSACTION: bool> WriteBatchWithTransaction<TRANSACTION> {
                 value.as_ptr() as *const c_char,
                 value.len() as size_t,
             );
+        }
+    }
+
+    pub fn put_entity_cf_opt<'a, 'b, K, V1, V2, I1, I2>(
+        &mut self,
+        cf: &impl AsColumnFamilyRef,
+        key: K,
+        names: I1,
+        values: I2,
+    ) -> Result<(), Error>
+    where
+        K: AsRef<[u8]>,
+        V1: 'a + AsRef<[u8]>,
+        V2: 'b + AsRef<[u8]>,
+        I1: IntoIterator<Item = &'a V1>,
+        I2: IntoIterator<Item = &'b V2>,
+    {
+        let key = key.as_ref();
+
+        let (ptr_names, names_sizes): (Vec<_>, Vec<_>) = names
+            .into_iter()
+            .map(|k| {
+                let k = k.as_ref();
+                (k.as_ptr(), k.len())
+            })
+            .unzip();
+
+        let (ptr_values, values_sizes): (Vec<_>, Vec<_>) = values
+            .into_iter()
+            .map(|k| {
+                let k = k.as_ref();
+                (k.as_ptr(), k.len())
+            })
+            .unzip();
+
+        if ptr_names.len() != ptr_values.len() {
+            return Err(Error::new(
+                "columns names and values length mismatch".to_string(),
+            ));
+        }
+
+        unsafe {
+            ffi_try!(ffi::rocksdb_writebatch_put_entity_cf(
+                self.inner,
+                cf.inner(),
+                key.as_ptr() as *const c_char,
+                key.len() as size_t,
+                ptr_names.len(),
+                ptr_names.as_ptr() as *const *const c_char,
+                names_sizes.as_ptr(),
+                ptr_values.as_ptr() as *const *const c_char,
+                values_sizes.as_ptr(),
+            ));
+            Ok(())
         }
     }
 

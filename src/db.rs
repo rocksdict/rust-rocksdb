@@ -14,16 +14,15 @@
 //
 
 use crate::{
-    column_family::AsColumnFamilyRef,
-    column_family::BoundColumnFamily,
-    column_family::UnboundColumnFamily,
+    column_family::{AsColumnFamilyRef, BoundColumnFamily, UnboundColumnFamily},
     db_options::OptionsMustOutliveDB,
     ffi,
     ffi_util::{from_cstr, opt_bytes_to_ptr, raw_data, to_cpath, CStrLike},
     ColumnFamily, ColumnFamilyDescriptor, CompactOptions, DBIteratorWithThreadMode,
     DBPinnableSlice, DBRawIteratorWithThreadMode, DBWALIterator, Direction, Error, FlushOptions,
-    IngestExternalFileOptions, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode,
-    WaitForCompactOptions, WriteBatch, WriteOptions, DEFAULT_COLUMN_FAMILY_NAME,
+    IngestExternalFileOptions, IteratorMode, Options, PinnableWideColumns, ReadOptions,
+    SnapshotWithThreadMode, WaitForCompactOptions, WriteBatch, WriteOptions,
+    DEFAULT_COLUMN_FAMILY_NAME,
 };
 
 use crate::ffi_util::CSlice;
@@ -1079,6 +1078,40 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
     }
 
     /// Return the value associated with a key using RocksDB's PinnableSlice
+    /// so as to avoid unnecessary memory copy. Similar to get_pinned_opt but
+    /// allows specifying ColumnFamily
+    pub fn get_entity_cf_opt<K: AsRef<[u8]>>(
+        &self,
+        cf: &impl AsColumnFamilyRef,
+        key: K,
+        readopts: &ReadOptions,
+    ) -> Result<Option<PinnableWideColumns>, Error> {
+        if readopts.inner.is_null() {
+            return Err(Error::new(
+                "Unable to create RocksDB read options. This is a fairly trivial call, and its \
+                 failure may be indicative of a mis-compiled or mis-loaded RocksDB library."
+                    .to_owned(),
+            ));
+        }
+
+        let key = key.as_ref();
+        unsafe {
+            let val = ffi_try!(ffi::rocksdb_get_entity_cf(
+                self.inner.inner(),
+                readopts.inner,
+                cf.inner(),
+                key.as_ptr() as *const c_char,
+                key.len() as size_t,
+            ));
+            if val.is_null() {
+                Ok(None)
+            } else {
+                Ok(Some(PinnableWideColumns::from_c(val)))
+            }
+        }
+    }
+
+    /// Return the value associated with a key using RocksDB's PinnableSlice
     /// so as to avoid unnecessary memory copy. Similar to get_pinned_cf_opt but
     /// leverages default options.
     pub fn get_pinned_cf<K: AsRef<[u8]>>(
@@ -1625,6 +1658,62 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
                 ts.len() as size_t,
                 value.as_ptr() as *const c_char,
                 value.len() as size_t,
+            ));
+            Ok(())
+        }
+    }
+
+    pub fn put_entity_cf_opt<'a, 'b, K, V1, V2, I1, I2>(
+        &self,
+        cf: &impl AsColumnFamilyRef,
+        key: K,
+        names: I1,
+        values: I2,
+        writeopts: &WriteOptions,
+    ) -> Result<(), Error>
+    where
+        K: AsRef<[u8]>,
+        V1: 'a + AsRef<[u8]>,
+        V2: 'b + AsRef<[u8]>,
+        I1: IntoIterator<Item = &'a V1>,
+        I2: IntoIterator<Item = &'b V2>,
+    {
+        let key = key.as_ref();
+
+        let (ptr_names, names_sizes): (Vec<_>, Vec<_>) = names
+            .into_iter()
+            .map(|k| {
+                let k = k.as_ref();
+                (k.as_ptr(), k.len())
+            })
+            .unzip();
+
+        let (ptr_values, values_sizes): (Vec<_>, Vec<_>) = values
+            .into_iter()
+            .map(|k| {
+                let k = k.as_ref();
+                (k.as_ptr(), k.len())
+            })
+            .unzip();
+
+        if ptr_names.len() != ptr_values.len() {
+            return Err(Error::new(
+                "columns names and values length mismatch".to_string(),
+            ));
+        }
+
+        unsafe {
+            ffi_try!(ffi::rocksdb_put_entity_cf(
+                self.inner.inner(),
+                writeopts.inner,
+                cf.inner(),
+                key.as_ptr() as *const c_char,
+                key.len() as size_t,
+                ptr_names.len(),
+                ptr_names.as_ptr() as *const *const c_char,
+                names_sizes.as_ptr(),
+                ptr_values.as_ptr() as *const *const c_char,
+                values_sizes.as_ptr(),
             ));
             Ok(())
         }

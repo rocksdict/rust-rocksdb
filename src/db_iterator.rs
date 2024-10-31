@@ -14,7 +14,9 @@
 
 use crate::{
     db::{DBAccess, DB},
-    ffi, Error, ReadOptions, WriteBatch,
+    ffi,
+    wide_columns::WideColumns,
+    Error, ReadOptions, WriteBatch,
 };
 use libc::{c_char, c_uchar, size_t};
 use std::{marker::PhantomData, slice};
@@ -332,6 +334,15 @@ impl<'a, D: DBAccess> DBRawIteratorWithThreadMode<'a, D> {
         }
     }
 
+    /// Returns pair with slice of the current key and current value.
+    pub fn columns(&self) -> Option<WideColumns> {
+        if self.valid() {
+            Some(self.columns_impl())
+        } else {
+            None
+        }
+    }
+
     /// Returns a slice of the current key; assumes the iterator is valid.
     fn key_impl(&self) -> &[u8] {
         // Safety Note: This is safe as all methods that may invalidate the buffer returned
@@ -353,6 +364,13 @@ impl<'a, D: DBAccess> DBRawIteratorWithThreadMode<'a, D> {
             let val_len_ptr: *mut size_t = &mut val_len;
             let val_ptr = ffi::rocksdb_iter_value(self.inner.as_ptr(), val_len_ptr);
             slice::from_raw_parts(val_ptr as *const c_uchar, val_len)
+        }
+    }
+
+    fn columns_impl(&self) -> WideColumns {
+        unsafe {
+            let columns = ffi::rocksdb_iter_columns(self.inner.as_ptr());
+            WideColumns::from_c(columns)
         }
     }
 }

@@ -1,19 +1,22 @@
 [package]
 name = "librocksdb-sys"
-version = "0.17.0+9.0.0"
+version = "0.17.0+9.7.3"
 edition = "2018"
 rust-version = "1.71.1"
-authors = ["Karl Hobley <karlhobley10@gmail.com>", "Arkadiy Paronyan <arkadiy@ethcore.io>"]
+authors = [
+    "Karl Hobley <karlhobley10@gmail.com>",
+    "Arkadiy Paronyan <arkadiy@ethcore.io>",
+]
 license = "MIT/Apache-2.0/BSD-3-Clause"
 description = "Native bindings to librocksdb"
 readme = "README.md"
 repository = "https://github.com/rust-rocksdb/rust-rocksdb"
-keywords = [ "bindings", "ffi", "rocksdb" ]
-categories = [ "api-bindings", "database", "external-ffi-bindings" ]
+keywords = ["bindings", "ffi", "rocksdb"]
+categories = ["api-bindings", "database", "external-ffi-bindings"]
 links = "rocksdb"
 
 [features]
-default = [ "static" ]
+default = ["static"]
 jemalloc = ["tikv-jemalloc-sys"]
 static = ["libz-sys?/static", "bzip2-sys?/static"]
 mt_static = []
@@ -27,7 +30,9 @@ rtti = []
 
 [dependencies]
 libc = "0.2"
-tikv-jemalloc-sys = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms"], optional = true }
+tikv-jemalloc-sys = { version = "0.6", features = [
+    "unprefixed_malloc_on_supported_platforms",
+], optional = true }
 lz4-sys = { version = "1.10", optional = true }
 zstd-sys = { version = "2.0", features = ["zdict_builder"], optional = true }
 libz-sys = { version = "1.1", default-features = false, optional = true }
