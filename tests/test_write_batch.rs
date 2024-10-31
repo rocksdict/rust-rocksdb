@@ -36,6 +36,9 @@ fn test_write_batch_clear() {
 fn test_write_batch_wide_columns() {
     let path = DBPath::new("_rust_rocksdb_write_batch_widecolumns_test");
     {
+        #[cfg(feature = "multi-threaded-cf")]
+        let db = DB::open_default(&path).unwrap();
+        #[cfg(not(feature = "multi-threaded-cf"))]
         let mut db = DB::open_default(&path).unwrap();
         db.create_cf("test", &Options::default()).unwrap();
         let cf = db.cf_handle("test").unwrap();
