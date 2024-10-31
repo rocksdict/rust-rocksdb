@@ -32,6 +32,7 @@ fn rocksdb_include_dir() -> String {
 fn bindgen_rocksdb() {
     let bindings = bindgen::Builder::default()
         .header(rocksdb_include_dir() + "/rocksdb/c.h")
+        .header("wide_columns_c.h")
         .derive_debug(false)
         .blocklist_type("max_align_t") // https://github.com/rust-lang-nursery/rust-bindgen/issues/550
         .ctypes_prefix("libc")
@@ -100,6 +101,9 @@ fn build_rocksdb() {
         // We have a pre-generated a version of build_version.cc in the local directory
         .filter(|file| !matches!(*file, "util/build_version.cc"))
         .collect::<Vec<&'static str>>();
+
+    // c binding for wide columns
+    lib_sources.push("../wide_columns_c.cc");
 
     if let (true, Ok(target_feature_value)) = (
         target.contains("x86_64"),
