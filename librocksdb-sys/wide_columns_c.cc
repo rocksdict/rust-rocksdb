@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "rocksdb/rocksdb_namespace.h"
 #include "rocksdb/wide_columns.h"
 
 #include "rocksdb/compaction_filter.h"
@@ -30,6 +31,7 @@ using ROCKSDB_NAMESPACE::BackupID;
 using ROCKSDB_NAMESPACE::ColumnFamilyHandle;
 using ROCKSDB_NAMESPACE::DB;
 using ROCKSDB_NAMESPACE::Iterator;
+using ROCKSDB_NAMESPACE::ReadOptions;
 using ROCKSDB_NAMESPACE::Status;
 using ROCKSDB_NAMESPACE::WriteBatch;
 using ROCKSDB_NAMESPACE::WriteOptions;
@@ -41,6 +43,14 @@ struct rocksdb_t {
 };
 struct rocksdb_writebatch_t {
   WriteBatch rep;
+};
+struct rocksdb_readoptions_t {
+  ReadOptions rep;
+  // stack variables to set pointers to in ReadOptions
+  Slice upper_bound;
+  Slice lower_bound;
+  Slice timestamp;
+  Slice iter_start_ts;
 };
 struct rocksdb_writeoptions_t {
   WriteOptions rep;
@@ -89,6 +99,16 @@ void rocksdb_put_entity_cf(rocksdb_t* db, const rocksdb_writeoptions_t* options,
   }
   SaveError(errptr, db->rep->PutEntity(options->rep, column_family->rep,
                                        Slice(key, keylen), columns));
+}
+
+rocksdb_pinnablewidecolumns_t* rocksdb_get_entity_cf(
+    rocksdb_t* db, const rocksdb_readoptions_t* options,
+    rocksdb_column_family_handle_t* column_family, const char* key,
+    size_t keylen, char** errptr) {
+  rocksdb_pinnablewidecolumns_t* columns = new (rocksdb_pinnablewidecolumns_t);
+  SaveError(errptr, db->rep->GetEntity(options->rep, column_family->rep,
+                                       Slice(key, keylen), &columns->rep));
+  return columns;
 }
 
 rocksdb_widecolumns_t* rocksdb_iter_columns(const rocksdb_iterator_t* iter) {
