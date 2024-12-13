@@ -304,7 +304,11 @@ impl Options {
 /// ```
 /// use rocksdb::{DB, Options, WriteBatch, WriteOptions};
 ///
-/// let path = "_path_for_rocksdb_storageY1";
+/// let tempdir = tempfile::Builder::new()
+///     .prefix("_path_for_rocksdb_storageY1")
+///     .tempdir()
+///     .expect("Failed to create temporary path for the _path_for_rocksdb_storageY1");
+/// let path = tempdir.path();
 /// {
 ///     let db = DB::open_default(path).unwrap();
 ///     let mut batch = WriteBatch::default();
@@ -337,7 +341,11 @@ pub struct LruCacheOptions {
 /// ```
 /// use rocksdb::{DB, Options, FlushOptions};
 ///
-/// let path = "_path_for_rocksdb_storageY2";
+/// let tempdir = tempfile::Builder::new()
+///     .prefix("_path_for_rocksdb_storageY2")
+///     .tempdir()
+///     .expect("Failed to create temporary path for the _path_for_rocksdb_storageY2");
+/// let path = tempdir.path();
 /// {
 ///     let db = DB::open_default(path).unwrap();
 ///
@@ -392,18 +400,26 @@ pub struct CuckooTableOptions {
 ///
 /// let writer_opts = Options::default();
 /// let mut writer = SstFileWriter::create(&writer_opts);
-/// writer.open("_path_for_sst_file").unwrap();
+/// let tempdir = tempfile::Builder::new()
+///     .tempdir()
+///     .expect("Failed to create temporary folder for the _path_for_sst_file");
+/// let path1 = tempdir.path().join("_path_for_sst_file");
+/// writer.open(path1.clone()).unwrap();
 /// writer.put(b"k1", b"v1").unwrap();
 /// writer.finish().unwrap();
 ///
-/// let path = "_path_for_rocksdb_storageY3";
+/// let tempdir2 = tempfile::Builder::new()
+///     .prefix("_path_for_rocksdb_storageY3")
+///     .tempdir()
+///     .expect("Failed to create temporary path for the _path_for_rocksdb_storageY3");
+/// let path2 = tempdir2.path();
 /// {
-///   let db = DB::open_default(&path).unwrap();
+///   let db = DB::open_default(&path2).unwrap();
 ///   let mut ingest_opts = IngestExternalFileOptions::default();
 ///   ingest_opts.set_move_files(true);
-///   db.ingest_external_file_opts(&ingest_opts, vec!["_path_for_sst_file"]).unwrap();
+///   db.ingest_external_file_opts(&ingest_opts, vec![path1]).unwrap();
 /// }
-/// let _ = DB::destroy(&Options::default(), path);
+/// let _ = DB::destroy(&Options::default(), path2);
 /// ```
 pub struct IngestExternalFileOptions {
     pub(crate) inner: *mut ffi::rocksdb_ingestexternalfileoptions_t,
@@ -2272,6 +2288,29 @@ impl Options {
         }
     }
 
+    /// Sets the compaction priority. When multiple files are picked for compaction from a level,
+    /// this option determines which files to pick first.
+    ///
+    /// Default: `CompactionPri::ByCompensatedSize`
+    ///
+    /// Dynamically changeable through SetOptions() API
+    ///
+    /// See [rocksdb post](https://github.com/facebook/rocksdb/blob/f20d12adc85ece3e75fb238872959c702c0e5535/docs/_posts/2016-01-29-compaction_pri.markdown) for more details.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rocksdb::{Options, CompactionPri};
+    ///
+    /// let mut opts = Options::default();
+    /// opts.set_compaction_pri(CompactionPri::MinOverlappingRatio);
+    /// ```
+    pub fn set_compaction_pri(&mut self, pri: CompactionPri) {
+        unsafe {
+            ffi::rocksdb_options_set_compaction_pri(self.inner, pri as i32);
+        }
+    }
+
     /// Sets the soft limit on number of level-0 files. We start slowing down writes at this
     /// point. A value < `0` means that no writing slow down will be triggered by
     /// number of files in level-0.
@@ -3497,6 +3536,59 @@ impl Options {
             ffi::rocksdb_options_set_avoid_unnecessary_blocking_io(self.inner, u8::from(val));
         }
     }
+
+    /// If true, the log numbers and sizes of the synced WALs are tracked
+    /// in MANIFEST. During DB recovery, if a synced WAL is missing
+    /// from disk, or the WAL's size does not match the recorded size in
+    /// MANIFEST, an error will be reported and the recovery will be aborted.
+    ///
+    /// This is one additional protection against WAL corruption besides the
+    /// per-WAL-entry checksum.
+    ///
+    /// Note that this option does not work with secondary instance.
+    /// Currently, only syncing closed WALs are tracked. Calling `DB::SyncWAL()`,
+    /// etc. or writing with `WriteOptions::sync=true` to sync the live WAL is not
+    /// tracked for performance/efficiency reasons.
+    ///
+    /// See: <https://github.com/facebook/rocksdb/wiki/Track-WAL-in-MANIFEST>
+    ///
+    /// Default: false (disabled)
+    pub fn set_track_and_verify_wals_in_manifest(&mut self, val: bool) {
+        unsafe {
+            ffi::rocksdb_options_set_track_and_verify_wals_in_manifest(self.inner, u8::from(val));
+        }
+    }
+
+    /// Returns the value of the `track_and_verify_wals_in_manifest` option.
+    pub fn get_track_and_verify_wals_in_manifest(&self) -> bool {
+        let val_u8 =
+            unsafe { ffi::rocksdb_options_get_track_and_verify_wals_in_manifest(self.inner) };
+        val_u8 != 0
+    }
+
+    /// The DB unique ID can be saved in the DB manifest (preferred, this option)
+    /// or an IDENTITY file (historical, deprecated), or both. If this option is
+    /// set to false (old behavior), then `write_identity_file` must be set to true.
+    /// The manifest is preferred because
+    /// 1. The IDENTITY file is not checksummed, so it is not as safe against
+    ///    corruption.
+    /// 2. The IDENTITY file may or may not be copied with the DB (e.g. not
+    ///    copied by BackupEngine), so is not reliable for the provenance of a DB.
+    /// This option might eventually be obsolete and removed as Identity files
+    /// are phased out.
+    ///
+    /// Default: true (enabled)
+    pub fn set_write_dbid_to_manifest(&mut self, val: bool) {
+        unsafe {
+            ffi::rocksdb_options_set_write_dbid_to_manifest(self.inner, u8::from(val));
+        }
+    }
+
+    /// Returns the value of the `write_dbid_to_manifest` option.
+    pub fn get_write_dbid_to_manifest(&self) -> bool {
+        let val_u8 = unsafe { ffi::rocksdb_options_get_write_dbid_to_manifest(self.inner) };
+        val_u8 != 0
+    }
 }
 
 impl Default for Options {
@@ -3687,6 +3779,27 @@ pub enum ReadTier {
     Persisted,
     /// Reads data in memtable. Used for memtable only iterators.
     Memtable,
+}
+
+#[repr(i32)]
+pub enum CompactionPri {
+    /// Slightly prioritize larger files by size compensated by #deletes
+    ByCompensatedSize = 0,
+    /// First compact files whose data's latest update time is oldest.
+    /// Try this if you only update some hot keys in small ranges.
+    OldestLargestSeqFirst = 1,
+    /// First compact files whose range hasn't been compacted to the next level
+    /// for the longest. If your updates are random across the key space,
+    /// write amplification is slightly better with this option.
+    OldestSmallestSeqFirst = 2,
+    /// First compact files whose ratio between overlapping size in next level
+    /// and its size is the smallest. It in many cases can optimize write amplification.
+    MinOverlappingRatio = 3,
+    /// Keeps a cursor(s) of the successor of the file (key range) was/were
+    /// compacted before, and always picks the next files (key range) in that
+    /// level. The file picking process will cycle through all the files in a
+    /// round-robin manner.
+    RoundRobin = 4,
 }
 
 impl ReadOptions {
@@ -4532,7 +4645,7 @@ impl Drop for DBPath {
 #[cfg(test)]
 mod tests {
     use crate::db_options::WriteBufferManager;
-    use crate::{Cache, MemtableFactory, Options};
+    use crate::{Cache, CompactionPri, MemtableFactory, Options};
 
     #[test]
     fn test_enable_statistics() {
@@ -4583,5 +4696,30 @@ mod tests {
 
         // WriteBufferManager outlives options
         assert!(write_buffer_manager.enabled());
+    }
+
+    #[test]
+    fn compaction_pri() {
+        let mut opts = Options::default();
+        opts.set_compaction_pri(CompactionPri::RoundRobin);
+        opts.create_if_missing(true);
+        let tmp = tempfile::tempdir().unwrap();
+        let _db = crate::DB::open(&opts, tmp.path()).unwrap();
+
+        let options = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .find_map(|x| {
+                let x = x.ok()?;
+                x.file_name()
+                    .into_string()
+                    .unwrap()
+                    .contains("OPTIONS")
+                    .then_some(x.path())
+            })
+            .map(std::fs::read_to_string)
+            .unwrap()
+            .unwrap();
+
+        assert!(options.contains("compaction_pri=kRoundRobin"));
     }
 }

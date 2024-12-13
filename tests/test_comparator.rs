@@ -16,7 +16,11 @@ type CompareFn = dyn Fn(&[u8], &[u8]) -> Ordering;
 pub fn write_to_db_with_comparator(compare_fn: Box<CompareFn>) -> Vec<String> {
     let mut result_vec = Vec::new();
 
-    let path = "_path_for_rocksdb_storage";
+    let tempdir = tempfile::Builder::new()
+        .prefix("_path_for_rocksdb_storage")
+        .tempdir()
+        .expect("Failed to create temporary path for the _path_for_rocksdb_storage");
+    let path = tempdir.path();
     {
         let mut db_opts = Options::default();
 
@@ -77,7 +81,11 @@ fn test_comparator() {
 
 #[test]
 fn test_comparator_with_ts() {
-    let path = "_path_for_rocksdb_storage_with_ts";
+    let tempdir = tempfile::Builder::new()
+        .prefix("_path_for_rocksdb_storage_with_ts")
+        .tempdir()
+        .expect("Failed to create temporary path for the _path_for_rocksdb_storage_with_ts.");
+    let path = tempdir.path();
     let _ = DB::destroy(&Options::default(), path);
 
     {
@@ -165,7 +173,11 @@ fn test_comparator_with_ts() {
 
 #[test]
 fn test_comparator_with_column_family_with_ts() {
-    let path = "_path_for_rocksdb_storage_with_column_family_with_ts";
+    let tempdir = tempfile::Builder::new()
+        .prefix("_path_for_rocksdb_storage_with_column_family_with_ts")
+        .tempdir()
+        .expect("Failed to create temporary path for the _path_for_rocksdb_storage_with_column_family_with_ts.");
+    let path = tempdir.path();
     let _ = DB::destroy(&Options::default(), path);
 
     {

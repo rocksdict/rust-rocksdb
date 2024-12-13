@@ -91,6 +91,17 @@ fn build_rocksdb() {
         config.define("USE_RTTI", Some("1"));
     }
 
+    // https://github.com/facebook/rocksdb/blob/be7703b27d9b3ac458641aaadf27042d86f6869c/Makefile#L195
+    if cfg!(feature = "lto") {
+        config.flag("-flto");
+        if !config.get_compiler().is_like_clang() {
+            panic!(
+                "LTO is only supported with clang. Either disable the `lto` feature\
+             or set `CC=/usr/bin/clang CXX=/usr/bin/clang++` environment variables."
+            );
+        }
+    }
+
     config.include(".");
     config.define("NDEBUG", Some("1"));
 
@@ -166,8 +177,21 @@ fn build_rocksdb() {
         config.define("OS_LINUX", None);
         config.define("ROCKSDB_PLATFORM_POSIX", None);
         config.define("ROCKSDB_LIB_IO_POSIX", None);
+        config.define("ROCKSDB_SCHED_GETCPU_PRESENT", None);
+    } else if target.contains("dragonfly") {
+        config.define("OS_DRAGONFLYBSD", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
     } else if target.contains("freebsd") {
         config.define("OS_FREEBSD", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
+    } else if target.contains("netbsd") {
+        config.define("OS_NETBSD", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
+    } else if target.contains("openbsd") {
+        config.define("OS_OPENBSD", None);
         config.define("ROCKSDB_PLATFORM_POSIX", None);
         config.define("ROCKSDB_LIB_IO_POSIX", None);
     } else if target.contains("windows") {

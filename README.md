@@ -60,3 +60,29 @@ The feature `mt_static` will request the library to be built with [/MT](https://
 flag, which results in library using the static version of the run-time library.
 *This can be useful in case there's a conflict in the dependecy tree between different
 run-time versions.*
+
+## Switch between static and dynamic linking for bindgen (features `bindgen-static` and `bindgen-runtime`)
+
+The feature `bindgen-runtime` will enable the `runtime` feature of bindgen, which dynamically
+links to libclang. This is suitable for most platforms, and is enabled by default.
+
+The feature `bindgen-static` will enable the `static` feature of bindgen, which statically
+links to libclang. This is suitable for musllinux platforms, such as Alpine linux.
+To build on Alpine linux for example, make these changes to your Cargo.toml:
+
+```toml
+[dependencies.rocksdb]
+default-features = false
+features = ["bindgen-static", "snappy", "lz4", "zstd", "zlib", "bzip2"]
+```
+
+Notice that `runtime` and `static` features are mutually exclusive, and won't compile if both enabled.
+
+## LTO
+Enable the `lto` feature to enable link-time optimization. It will compile rocksdb with `-flto` flag. This feature is disabled by default.
+
+> [!IMPORTANT]
+> You must use clang as `CC`. Eg. `CC=/usr/bin/clang CXX=/usr/bin/clang++`. Clang llvm version must be the same as the one used by rust compiler.
+> On the rust side you should use `RUSTFLAGS="-Clinker-plugin-lto -Clinker=clang -Clink-arg=-fuse-ld=lld"`.
+
+Check the [Rust documentation](https://doc.rust-lang.org/rustc/linker-plugin-lto.html) for more information.

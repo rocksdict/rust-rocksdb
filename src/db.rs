@@ -2543,6 +2543,19 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
             }
         }
     }
+
+    /// Returns the DB identity. This is typically ASCII bytes, but that is not guaranteed.
+    pub fn get_db_identity(&self) -> Result<Vec<u8>, Error> {
+        unsafe {
+            let mut length: usize = 0;
+            let identity_ptr = ffi::rocksdb_get_db_identity(self.inner.inner(), &mut length);
+            let identity_vec = raw_data(identity_ptr, length);
+            ffi::rocksdb_free(identity_ptr as *mut c_void);
+            // In RocksDB: get_db_identity copies a std::string so it should not fail, but
+            // the API allows it to be overridden, so it might
+            identity_vec.ok_or_else(|| Error::new("get_db_identity returned NULL".to_string()))
+        }
+    }
 }
 
 impl<I: DBInner> DBCommon<SingleThreaded, I> {
@@ -2573,8 +2586,11 @@ impl<I: DBInner> DBCommon<SingleThreaded, I> {
 impl<I: DBInner> DBCommon<MultiThreaded, I> {
     /// Creates column family with given name and options
     pub fn create_cf<N: AsRef<str>>(&self, name: N, opts: &Options) -> Result<(), Error> {
+        // Note that we acquire the cfs lock before inserting: otherwise we might race
+        // another caller who observed the handle as missing.
+        let mut cfs = self.cfs.cfs.write().unwrap();
         let inner = self.create_inner_cf_handle(name.as_ref(), opts)?;
-        self.cfs.cfs.write().unwrap().insert(
+        cfs.insert(
             name.as_ref().to_string(),
             Arc::new(UnboundColumnFamily { inner }),
         );
