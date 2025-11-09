@@ -12,7 +12,7 @@ pub struct WideColumns<'a> {
     iter: PhantomData<&'a ()>,
 }
 
-impl<'a> WideColumns<'a> {
+impl WideColumns<'_> {
     pub unsafe fn from_c(inner: *const ffi::rocksdb_widecolumns_t) -> Self {
         Self {
             inner,
@@ -31,17 +31,17 @@ impl<'a> WideColumns<'a> {
 
     pub unsafe fn get_column_name_unchecked(&self, idx: usize) -> &[u8] {
         let mut name_len: usize = 0;
-        let name = ffi::rocksdb_widecolumns_name(self.inner, idx, &mut name_len);
+        let name = ffi::rocksdb_widecolumns_name(self.inner, idx, &raw mut name_len);
         &*slice_from_raw_parts(name as *const u8, name_len)
     }
 
     pub unsafe fn get_column_value_unchecked(&self, idx: usize) -> &[u8] {
         let mut value_len: usize = 0;
-        let value = ffi::rocksdb_widecolumns_value(self.inner, idx, &mut value_len);
+        let value = ffi::rocksdb_widecolumns_value(self.inner, idx, &raw mut value_len);
         &*slice_from_raw_parts(value as *const u8, value_len)
     }
 
-    pub unsafe fn get_column_unchecked(&self, idx: usize) -> WideColumn {
+    pub unsafe fn get_column_unchecked(&self, idx: usize) -> WideColumn<'_> {
         WideColumn {
             name: self.get_column_name_unchecked(idx),
             value: self.get_column_value_unchecked(idx),
@@ -55,7 +55,7 @@ pub struct PinnableWideColumns<'a> {
     iter: PhantomData<&'a ()>,
 }
 
-impl<'a> PinnableWideColumns<'a> {
+impl PinnableWideColumns<'_> {
     pub unsafe fn from_c(inner: *const ffi::rocksdb_pinnablewidecolumns_t) -> Self {
         Self {
             inner,
@@ -74,17 +74,17 @@ impl<'a> PinnableWideColumns<'a> {
 
     pub unsafe fn get_column_name_unchecked(&self, idx: usize) -> &[u8] {
         let mut name_len: usize = 0;
-        let name = ffi::rocksdb_pinnablewidecolumns_name(self.inner, idx, &mut name_len);
+        let name = ffi::rocksdb_pinnablewidecolumns_name(self.inner, idx, &raw mut name_len);
         &*slice_from_raw_parts(name as *const u8, name_len)
     }
 
     pub unsafe fn get_column_value_unchecked(&self, idx: usize) -> &[u8] {
         let mut value_len: usize = 0;
-        let value = ffi::rocksdb_pinnablewidecolumns_value(self.inner, idx, &mut value_len);
+        let value = ffi::rocksdb_pinnablewidecolumns_value(self.inner, idx, &raw mut value_len);
         &*slice_from_raw_parts(value as *const u8, value_len)
     }
 
-    pub unsafe fn get_column_unchecked(&self, idx: usize) -> WideColumn {
+    pub unsafe fn get_column_unchecked(&self, idx: usize) -> WideColumn<'_> {
         WideColumn {
             name: self.get_column_name_unchecked(idx),
             value: self.get_column_value_unchecked(idx),
@@ -126,7 +126,7 @@ impl<'me> Iterator for PinnableWideColumnsIter<'me> {
     }
 }
 
-impl<'a> Iterable for PinnableWideColumns<'a> {
+impl Iterable for PinnableWideColumns<'_> {
     type Item<'me> = WideColumn<'me>
     where
         Self: 'me;
@@ -165,7 +165,7 @@ impl<'me> Iterator for WideColumnsIter<'me> {
     }
 }
 
-impl<'a> Iterable for WideColumns<'a> {
+impl Iterable for WideColumns<'_> {
     type Item<'me> = WideColumn<'me>
     where
         Self: 'me;

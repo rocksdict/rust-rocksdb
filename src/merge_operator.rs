@@ -90,7 +90,7 @@ pub unsafe extern "C" fn delete_callback(
     value_length: size_t,
 ) {
     if !value.is_null() {
-        drop(unsafe { Box::from_raw(slice::from_raw_parts_mut(value as *mut u8, value_length)) });
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(value as *mut u8, value_length)) });
     }
 }
 
@@ -190,7 +190,7 @@ impl MergeOperands {
         self.num_operands == 0
     }
 
-    pub fn iter(&self) -> MergeOperandsIter {
+    pub fn iter(&self) -> MergeOperandsIter<'_> {
         MergeOperandsIter {
             operands: self,
             cursor: 0,

@@ -185,14 +185,14 @@ pub trait DBAccess {
         &self,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error>;
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error>;
 
     fn get_pinned_cf_opt<K: AsRef<[u8]>>(
         &self,
         cf: &impl AsColumnFamilyRef,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error>;
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error>;
 
     fn multi_get_opt<K, I>(
         &self,
@@ -256,7 +256,7 @@ impl<T: ThreadMode, D: DBInner> DBAccess for DBCommon<T, D> {
         &self,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         self.get_pinned_opt(key, readopts)
     }
 
@@ -265,7 +265,7 @@ impl<T: ThreadMode, D: DBInner> DBAccess for DBCommon<T, D> {
         cf: &impl AsColumnFamilyRef,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         self.get_pinned_cf_opt(cf, key, readopts)
     }
 
@@ -926,7 +926,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
             let ptr = ffi_try!(ffi::rocksdb_list_column_families(
                 opts.inner,
                 cpath.as_ptr(),
-                &mut length,
+                &raw mut length,
             ));
 
             let vec = slice::from_raw_parts(ptr, length)
@@ -1076,7 +1076,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         &self,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         if readopts.inner.is_null() {
             return Err(Error::new(
                 "Unable to create RocksDB read options. This is a fairly trivial call, and its \
@@ -1104,7 +1104,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
     /// Return the value associated with a key using RocksDB's PinnableSlice
     /// so as to avoid unnecessary memory copy. Similar to get_pinned_opt but
     /// leverages default options.
-    pub fn get_pinned<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<DBPinnableSlice>, Error> {
+    pub fn get_pinned<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         self.get_pinned_opt(key, &ReadOptions::default())
     }
 
@@ -1116,7 +1116,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         cf: &impl AsColumnFamilyRef,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         if readopts.inner.is_null() {
             return Err(Error::new(
                 "Unable to create RocksDB read options. This is a fairly trivial call, and its \
@@ -1150,7 +1150,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         cf: &impl AsColumnFamilyRef,
         key: K,
         readopts: &ReadOptions,
-    ) -> Result<Option<PinnableWideColumns>, Error> {
+    ) -> Result<Option<PinnableWideColumns<'_>>, Error> {
         if readopts.inner.is_null() {
             return Err(Error::new(
                 "Unable to create RocksDB read options. This is a fairly trivial call, and its \
@@ -1183,7 +1183,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         &self,
         cf: &impl AsColumnFamilyRef,
         key: K,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         self.get_pinned_cf_opt(cf, key, &ReadOptions::default())
     }
 
@@ -1302,7 +1302,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         cf: &impl AsColumnFamilyRef,
         keys: I,
         sorted_input: bool,
-    ) -> Vec<Result<Option<DBPinnableSlice>, Error>>
+    ) -> Vec<Result<Option<DBPinnableSlice<'_>>, Error>>
     where
         K: AsRef<[u8]> + 'a + ?Sized,
         I: IntoIterator<Item = &'a K>,
@@ -1319,7 +1319,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         keys: I,
         sorted_input: bool,
         readopts: &ReadOptions,
-    ) -> Vec<Result<Option<DBPinnableSlice>, Error>>
+    ) -> Vec<Result<Option<DBPinnableSlice<'_>>, Error>>
     where
         K: AsRef<[u8]> + 'a + ?Sized,
         I: IntoIterator<Item = &'a K>,
@@ -1445,11 +1445,11 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
                     cf.inner(),
                     key.as_ptr() as *const c_char,
                     key.len() as size_t,
-                    &mut val,         /*value*/
-                    &mut val_len,     /*val_len*/
+                    &raw mut val,         /*value*/
+                    &raw mut val_len,     /*val_len*/
                     ptr::null(),      /*timestamp*/
                     0,                /*timestamp_len*/
-                    &mut value_found, /*value_found*/
+                    &raw mut value_found, /*value_found*/
                 )
             };
         // The value is only allocated (using malloc) and returned if it is found and
@@ -1601,7 +1601,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
         DBRawIteratorWithThreadMode::new_cf(self, cf_handle.inner(), readopts)
     }
 
-    pub fn snapshot(&self) -> SnapshotWithThreadMode<Self> {
+    pub fn snapshot(&self) -> SnapshotWithThreadMode<'_, Self> {
         SnapshotWithThreadMode::<Self>::new(self)
     }
 
@@ -2346,7 +2346,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
                     end_key_ptr,
                     end_key_len_ptr,
                     size_ptr,
-                    &mut err,
+                    &raw mut err,
                 );
             },
             Some(cf) => unsafe {
@@ -2359,7 +2359,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
                     end_key_ptr,
                     end_key_len_ptr,
                     size_ptr,
-                    &mut err,
+                    &raw mut err,
                 );
             },
         }
@@ -2543,11 +2543,11 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
                     let level = ffi::rocksdb_livefiles_level(files, i);
 
                     // get smallest key inside file
-                    let smallest_key = ffi::rocksdb_livefiles_smallestkey(files, i, &mut key_size);
+                    let smallest_key = ffi::rocksdb_livefiles_smallestkey(files, i, &raw mut key_size);
                     let smallest_key = raw_data(smallest_key, key_size);
 
                     // get largest key inside file
-                    let largest_key = ffi::rocksdb_livefiles_largestkey(files, i, &mut key_size);
+                    let largest_key = ffi::rocksdb_livefiles_largestkey(files, i, &raw mut key_size);
                     let largest_key = raw_data(largest_key, key_size);
 
                     livefiles.push(LiveFile {
@@ -2669,7 +2669,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
             let ts = ffi_try!(ffi::rocksdb_get_full_history_ts_low(
                 self.inner.inner(),
                 cf.inner(),
-                &mut ts_lowlen,
+                &raw mut ts_lowlen,
             ));
 
             if ts.is_null() {
@@ -2687,7 +2687,7 @@ impl<T: ThreadMode, D: DBInner> DBCommon<T, D> {
     pub fn get_db_identity(&self) -> Result<Vec<u8>, Error> {
         unsafe {
             let mut length: usize = 0;
-            let identity_ptr = ffi::rocksdb_get_db_identity(self.inner.inner(), &mut length);
+            let identity_ptr = ffi::rocksdb_get_db_identity(self.inner.inner(), &raw mut length);
             let identity_vec = raw_data(identity_ptr, length);
             ffi::rocksdb_free(identity_ptr as *mut c_void);
             // In RocksDB: get_db_identity copies a std::string so it should not fail, but
@@ -2747,7 +2747,7 @@ impl<I: DBInner> DBCommon<MultiThreaded, I> {
     }
 
     /// Returns the underlying column family handle
-    pub fn cf_handle(&self, name: &str) -> Option<Arc<BoundColumnFamily>> {
+    pub fn cf_handle(&self, name: &str) -> Option<Arc<BoundColumnFamily<'_>>> {
         self.cfs
             .cfs
             .read()
