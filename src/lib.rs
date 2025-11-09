@@ -104,7 +104,7 @@ mod snapshot;
 mod sst_file_writer;
 pub mod statistics;
 mod transactions;
-mod wide_columns;
+pub mod wide_columns;
 mod write_batch;
 
 pub use crate::{

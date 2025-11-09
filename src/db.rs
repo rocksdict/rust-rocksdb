@@ -18,11 +18,11 @@ use crate::{
     db_options::OptionsMustOutliveDB,
     ffi,
     ffi_util::{from_cstr, opt_bytes_to_ptr, raw_data, to_cpath, CStrLike},
+    wide_columns::PinnableWideColumns,
     ColumnFamily, ColumnFamilyDescriptor, CompactOptions, DBIteratorWithThreadMode,
     DBPinnableSlice, DBRawIteratorWithThreadMode, DBWALIterator, Direction, Error, FlushOptions,
-    IngestExternalFileOptions, IteratorMode, Options, PinnableWideColumns, ReadOptions,
-    SnapshotWithThreadMode, WaitForCompactOptions, WriteBatch, WriteOptions,
-    DEFAULT_COLUMN_FAMILY_NAME,
+    IngestExternalFileOptions, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode,
+    WaitForCompactOptions, WriteBatch, WriteOptions, DEFAULT_COLUMN_FAMILY_NAME,
 };
 
 use crate::column_family::ColumnFamilyTtl;
