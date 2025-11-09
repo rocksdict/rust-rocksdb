@@ -18,10 +18,20 @@ use std::{fs, io::Read as _};
 
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::{
-    BlockBasedOptions, Cache, DBCompressionType, DataBlockIndexType, Env, LruCacheOptions, Options,
-    ReadOptions, DB,
+    BlockBasedOptions, BlockBasedTablePinningTier, Cache, DBCompressionType, DataBlockIndexType,
+    Env, LruCacheOptions, Options, ReadOptions, DB,
 };
 use util::DBPath;
+
+fn read_settings_from_log(path: &DBPath) -> String {
+    let mut rocksdb_log = fs::File::open(format!("{}/LOG", path.as_ref().to_str().unwrap()))
+        .expect("rocksdb creates a LOG file");
+    let mut settings = String::new();
+    rocksdb_log
+        .read_to_string(&mut settings)
+        .expect("rocksdb log file is readable");
+    settings
+}
 
 #[test]
 fn test_load_latest() {
@@ -42,6 +52,17 @@ fn test_load_latest() {
     assert!(cfs.iter().any(|cf| cf.name() == "default"));
     assert!(cfs.iter().any(|cf| cf.name() == "cf0"));
     assert!(cfs.iter().any(|cf| cf.name() == "cf1"));
+}
+
+#[test]
+fn test_get_options_from_string() {
+    let mut opts = Options::default();
+    opts.set_use_fsync(true);
+    let new_opts = opts.get_options_from_string("use_fsync=false").unwrap();
+    assert!(!new_opts.get_use_fsync());
+    assert!(opts
+        .get_options_from_string("notarealoptionstring")
+        .is_err());
 }
 
 #[test]
@@ -79,8 +100,25 @@ fn test_set_level_compaction_dynamic_level_bytes() {
 
 #[test]
 fn test_block_based_options() {
-    let path = "_rust_rocksdb_test_block_based_options";
-    let n = DBPath::new(path);
+    // First check the default values.
+    let n = DBPath::new("_rust_rocksdb_test_block_based_options");
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+
+        let _db = DB::open(&opts, &n).unwrap();
+
+        let settings = read_settings_from_log(&n);
+
+        assert!(settings.contains("cache_index_and_filter_blocks: 0\n"));
+        assert!(settings.contains("pin_l0_filter_and_index_blocks_in_cache: 0\n"));
+        assert!(settings.contains("format_version: 6\n"));
+        assert!(settings.contains("index_block_restart_interval: 1\n"));
+        assert!(settings.contains("cache_index_and_filter_blocks_with_high_priority: 1\n"));
+    }
+
+    // Now check that block options do change the defaults.
+    let n = DBPath::new("_rust_rocksdb_test_block_based_options2");
     {
         let mut opts = Options::default();
         opts.create_if_missing(true);
@@ -90,21 +128,19 @@ fn test_block_based_options() {
         block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
         block_opts.set_format_version(4);
         block_opts.set_index_block_restart_interval(16);
+        block_opts.set_cache_index_and_filter_blocks_with_high_priority(false);
 
         opts.set_block_based_table_factory(&block_opts);
         let _db = DB::open(&opts, &n).unwrap();
 
-        // read the setting from the LOG file
-        let mut rocksdb_log = fs::File::open(format!("{}/LOG", (&n).as_ref().to_str().unwrap()))
-            .expect("rocksdb creates a LOG file");
-        let mut settings = String::new();
-        rocksdb_log.read_to_string(&mut settings).unwrap();
+        let settings = read_settings_from_log(&n);
 
         // check the settings are set in the LOG file
-        assert!(settings.contains("cache_index_and_filter_blocks: 1"));
-        assert!(settings.contains("pin_l0_filter_and_index_blocks_in_cache: 1"));
-        assert!(settings.contains("format_version: 4"));
-        assert!(settings.contains("index_block_restart_interval: 16"));
+        assert!(settings.contains("cache_index_and_filter_blocks: 1\n"));
+        assert!(settings.contains("pin_l0_filter_and_index_blocks_in_cache: 1\n"));
+        assert!(settings.contains("format_version: 4\n"));
+        assert!(settings.contains("index_block_restart_interval: 16\n"));
+        assert!(settings.contains("cache_index_and_filter_blocks_with_high_priority: 0\n"));
     }
 }
 
@@ -128,12 +164,7 @@ fn test_set_data_block_index_type() {
         opts.set_block_based_table_factory(&block_opts);
         let _db = DB::open(&opts, &n).expect("open a db works");
 
-        let mut rocksdb_log = fs::File::open(format!("{}/LOG", (&n).as_ref().to_str().unwrap()))
-            .expect("rocksdb creates a LOG file");
-        let mut settings = String::new();
-        rocksdb_log
-            .read_to_string(&mut settings)
-            .expect("can read the LOG file");
+        let settings = read_settings_from_log(&n);
         assert!(settings.contains("data_block_index_type: 0"));
         assert!(settings.contains("data_block_hash_table_util_ratio: 0.750000"));
     }
@@ -149,12 +180,7 @@ fn test_set_data_block_index_type() {
         opts.set_block_based_table_factory(&block_opts);
         let _db = DB::open(&opts, &n).expect("open a db works");
 
-        let mut rocksdb_log = fs::File::open(format!("{}/LOG", (&n).as_ref().to_str().unwrap()))
-            .expect("rocksdb creates a LOG file");
-        let mut settings = String::new();
-        rocksdb_log
-            .read_to_string(&mut settings)
-            .expect("can read the LOG file");
+        let settings = read_settings_from_log(&n);
         assert!(settings.contains("data_block_index_type: 1"));
         assert!(settings.contains("data_block_hash_table_util_ratio: 0.350000"));
     }
@@ -259,12 +285,7 @@ fn test_add_compact_on_deletion_collector_factory() {
     opts.add_compact_on_deletion_collector_factory(5, 10, 0.5);
     let _db = DB::open(&opts, &n).unwrap();
 
-    let mut rocksdb_log = fs::File::open(format!("{}/LOG", (&n).as_ref().to_str().unwrap()))
-        .expect("rocksdb creates a LOG file");
-    let mut settings = String::new();
-    rocksdb_log
-        .read_to_string(&mut settings)
-        .expect("can read the LOG file");
+    let settings = read_settings_from_log(&n);
     assert!(settings.contains("CompactOnDeletionCollector (Sliding window size = 5 Deletion trigger = 10 Deletion ratio = 0.5)"));
 }
 
@@ -310,6 +331,30 @@ fn test_set_periodic_compaction_seconds() {
         opts.create_if_missing(true);
         opts.set_periodic_compaction_seconds(5);
         let _db = DB::open(&opts, &path).unwrap();
+    }
+}
+
+#[test]
+fn test_set_ttl() {
+    let path = DBPath::new("_set_ttl_0");
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.set_ttl(0);
+        let _db = DB::open(&opts, &path).unwrap();
+
+        let settings = read_settings_from_log(&path);
+        assert!(settings.contains("Options.ttl: 0\n"));
+    }
+    let path = DBPath::new("_set_ttl_day");
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.set_ttl(86400);
+        let _db = DB::open(&opts, &path).unwrap();
+
+        let settings = read_settings_from_log(&path);
+        assert!(settings.contains("Options.ttl: 86400\n"));
     }
 }
 
@@ -422,4 +467,68 @@ fn test_set_write_dbid_to_manifest() {
         String::from_utf8_lossy(&db_orig_id),
         String::from_utf8_lossy(&db_checkpoint_id)
     );
+}
+
+#[test]
+fn test_block_based_table_pinning_tier() {
+    let path = DBPath::new("_block_based_table_pinning_tier");
+
+    // Test that we can create all enum variants
+    let _fallback = BlockBasedTablePinningTier::Fallback;
+    let _none = BlockBasedTablePinningTier::None;
+    let _flush_and_similar = BlockBasedTablePinningTier::FlushAndSimilar;
+    let _all = BlockBasedTablePinningTier::All;
+
+    // Test that enum values match expected C constants
+    assert_eq!(BlockBasedTablePinningTier::Fallback as i32, 0);
+    assert_eq!(BlockBasedTablePinningTier::None as i32, 1);
+    assert_eq!(BlockBasedTablePinningTier::FlushAndSimilar as i32, 2);
+    assert_eq!(BlockBasedTablePinningTier::All as i32, 3);
+
+    // Test that we can use the setter methods with BlockBasedOptions
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_top_level_index_pinning_tier(BlockBasedTablePinningTier::FlushAndSimilar);
+    block_opts.set_partition_pinning_tier(BlockBasedTablePinningTier::All);
+    block_opts.set_unpartitioned_pinning_tier(BlockBasedTablePinningTier::None);
+
+    // Test that we can create a database with these options
+    let mut opts = Options::default();
+    opts.create_if_missing(true);
+    opts.set_block_based_table_factory(&block_opts);
+
+    let db = DB::open(&opts, &path).unwrap();
+    db.put(b"test_key", b"test_value").unwrap();
+    assert_eq!(&*db.get(b"test_key").unwrap().unwrap(), b"test_value");
+}
+
+#[test]
+fn jemalloc_init() {
+    let path = DBPath::new("_jemalloc_init");
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        let _db = DB::open(&opts, &path).unwrap();
+    }
+
+    let mut rocksdb_log =
+        fs::File::open((&path).as_ref().join("LOG")).expect("rocksdb creates a LOG file");
+    let mut log_content = String::new();
+    rocksdb_log
+        .read_to_string(&mut log_content)
+        .expect("can read the LOG file");
+
+    if cfg!(feature = "jemalloc")
+        && !(
+            // See NO_JEMALLOC_TARGETS in librocksdb-sys/build.rs
+            cfg!(target_os = "android")
+                || cfg!(target_os = "dragonfly")
+                || cfg!(target_env = "musl")
+                || cfg!(target_os = "macos")
+                || cfg!(target_os = "ios")
+        )
+    {
+        assert!(log_content.contains("Jemalloc supported: 1"));
+    } else {
+        assert!(log_content.contains("Jemalloc supported: 0"));
+    }
 }

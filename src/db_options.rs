@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 use libc::{self, c_char, c_double, c_int, c_uchar, c_uint, c_void, size_t};
 
+use crate::column_family::ColumnFamilyTtl;
 use crate::statistics::{Histogram, HistogramData, StatsLevel};
 use crate::{
     compaction_filter::{self, CompactionFilterCallback, CompactionFilterFn},
@@ -168,26 +169,26 @@ impl Cache {
         Cache(Arc::new(CacheWrapper { inner }))
     }
 
-    /// Creates a HyperClockCache with capacity in bytes.
+    /// Creates a HyperClockCache with `capacity` in bytes.
     ///
-    /// `estimated_entry_charge` is an important tuning parameter. The optimal
-    /// choice at any given time is
-    /// `(cache.get_usage() - 64 * cache.get_table_address_count()) /
-    /// cache.get_occupancy_count()`, or approximately `cache.get_usage() /
-    /// cache.get_occupancy_count()`.
+    /// HyperClockCache is now generally recommended over LRUCache. See RocksDB's
+    /// [HyperClockCacheOptions in cache.h](https://github.com/facebook/rocksdb/blob/main/include/rocksdb/cache.h)
+    /// for details.
     ///
-    /// However, the value cannot be changed dynamically, so as the cache
-    /// composition changes at runtime, the following tradeoffs apply:
+    /// `estimated_entry_charge` is an optional parameter. When not provided
+    /// (== 0, recommended and default), an HCC variant with a
+    /// dynamically-growing table and generally good performance is used. This
+    /// variant depends on anonymous mmaps so might not be available on all
+    /// platforms.
     ///
-    /// * If the estimate is substantially too high (e.g., 25% higher),
-    ///   the cache may have to evict entries to prevent load factors that
-    ///   would dramatically affect lookup times.
-    /// * If the estimate is substantially too low (e.g., less than half),
-    ///   then meta data space overhead is substantially higher.
-    ///
-    /// The latter is generally preferable, and picking the larger of
-    /// block size and meta data block size is a reasonable choice that
-    /// errs towards this side.
+    /// If the average "charge" (uncompressed block size) of block cache entries
+    /// is reasonably predicted and provided here, the most efficient variant of
+    /// HCC is used. Performance is degraded if the prediction is inaccurate.
+    /// Prediction could be difficult or impossible with cache-charging features
+    /// such as WriteBufferManager. The best parameter choice based on a cache
+    /// in use is roughly given by `cache.get_usage() / cache.get_occupancy_count()`,
+    /// though it is better to estimate toward the lower side than the higher
+    /// side when the ratio might vary.
     pub fn new_hyper_clock_cache(capacity: size_t, estimated_entry_charge: size_t) -> Cache {
         Cache(Arc::new(CacheWrapper {
             inner: NonNull::new(unsafe {
@@ -670,6 +671,21 @@ impl BlockBasedOptions {
         }
     }
 
+    /// If cache_index_and_filter_blocks is enabled, cache index and filter
+    /// blocks with high priority. If set to true, depending on implementation of
+    /// block cache, index, filter, and other metadata blocks may be less likely
+    /// to be evicted than data blocks.
+    ///
+    /// Default: true.
+    pub fn set_cache_index_and_filter_blocks_with_high_priority(&mut self, v: bool) {
+        unsafe {
+            ffi::rocksdb_block_based_options_set_cache_index_and_filter_blocks_with_high_priority(
+                self.inner,
+                c_uchar::from(v),
+            );
+        }
+    }
+
     /// Defines the index type to be used for SS-table lookups.
     ///
     /// # Examples
@@ -836,6 +852,80 @@ impl BlockBasedOptions {
             );
         }
     }
+
+    /// Set the top-level index pinning tier.
+    ///
+    /// Controls when top-level index blocks are pinned in block cache memory.
+    /// This affects memory usage and lookup performance for large databases with
+    /// multiple levels.
+    ///
+    /// Default: `BlockBasedTablePinningTier::Fallback`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rocksdb::{BlockBasedOptions, BlockBasedTablePinningTier};
+    ///
+    /// let mut opts = BlockBasedOptions::default();
+    /// opts.set_top_level_index_pinning_tier(BlockBasedTablePinningTier::FlushAndSimilar);
+    /// ```
+    pub fn set_top_level_index_pinning_tier(&mut self, pinning_tier: BlockBasedTablePinningTier) {
+        unsafe {
+            ffi::rocksdb_block_based_options_set_top_level_index_pinning_tier(
+                self.inner,
+                pinning_tier as c_int,
+            );
+        }
+    }
+
+    /// Set the partition pinning tier.
+    ///
+    /// Controls when partition blocks (used in partitioned indexes and filters)
+    /// are pinned in block cache memory. This affects performance for databases
+    /// using partitioned metadata.
+    ///
+    /// Default: `BlockBasedTablePinningTier::Fallback`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rocksdb::{BlockBasedOptions, BlockBasedTablePinningTier};
+    ///
+    /// let mut opts = BlockBasedOptions::default();
+    /// opts.set_partition_pinning_tier(BlockBasedTablePinningTier::All);
+    /// ```
+    pub fn set_partition_pinning_tier(&mut self, pinning_tier: BlockBasedTablePinningTier) {
+        unsafe {
+            ffi::rocksdb_block_based_options_set_partition_pinning_tier(
+                self.inner,
+                pinning_tier as c_int,
+            );
+        }
+    }
+
+    /// Set the unpartitioned pinning tier.
+    ///
+    /// Controls when unpartitioned metadata blocks (index and filter blocks that
+    /// are not partitioned) are pinned in block cache memory.
+    ///
+    /// Default: `BlockBasedTablePinningTier::Fallback`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rocksdb::{BlockBasedOptions, BlockBasedTablePinningTier};
+    ///
+    /// let mut opts = BlockBasedOptions::default();
+    /// opts.set_unpartitioned_pinning_tier(BlockBasedTablePinningTier::None);
+    /// ```
+    pub fn set_unpartitioned_pinning_tier(&mut self, pinning_tier: BlockBasedTablePinningTier) {
+        unsafe {
+            ffi::rocksdb_block_based_options_set_unpartitioned_pinning_tier(
+                self.inner,
+                pinning_tier as c_int,
+            );
+        }
+    }
 }
 
 impl Default for BlockBasedOptions {
@@ -934,6 +1024,11 @@ pub enum LogLevel {
 impl Options {
     /// Constructs the DBOptions and ColumnFamilyDescriptors by loading the
     /// latest RocksDB options file stored in the specified rocksdb database.
+    ///
+    /// *IMPORTANT*:
+    /// ROCKSDB DOES NOT STORE cf ttl in the options file. If you have set it via
+    /// [`ColumnFamilyDescriptor::new_with_ttl`] then you need to set it again after loading the options file.
+    /// Tll will be set to [`ColumnFamilyTtl::Disabled`] for all column families for your safety.
     pub fn load_latest<P: AsRef<Path>>(
         path: P,
         env: Env,
@@ -971,6 +1066,39 @@ impl Options {
         Ok((options, column_families))
     }
 
+    /// Constructs a new `DBOptions` from `self` and a string `opts_str` with the syntax detailed in the blogpost
+    /// [Reading RocksDB options from a file](https://rocksdb.org/blog/2015/02/24/reading-rocksdb-options-from-a-file.html)
+    pub fn get_options_from_string<S: AsRef<str>>(
+        &mut self,
+        opts_str: S,
+    ) -> Result<Options, Error> {
+        let new_options = unsafe { ffi::rocksdb_options_create() };
+        let mut errptr: *mut c_char = null_mut();
+        let opts_cstr = opts_str
+            .as_ref()
+            .into_c_string()
+            .expect("into_c_string is infallible");
+        unsafe {
+            ffi::rocksdb_get_options_from_string(
+                self.inner.cast_const(),
+                opts_cstr.as_ptr(),
+                new_options,
+                &mut errptr,
+            );
+        }
+        if !errptr.is_null() {
+            let message = unsafe { CStr::from_ptr(errptr) }
+                .to_str()
+                .unwrap_or("invalid error message")
+                .to_string();
+            return Err(Error { message });
+        }
+        Ok(Options {
+            inner: new_options,
+            outlive: OptionsMustOutliveDB::default(),
+        })
+    }
+
     /// read column descriptors from c pointers
     #[inline]
     unsafe fn read_column_descriptors(
@@ -978,27 +1106,37 @@ impl Options {
         column_family_names: *mut *mut c_char,
         column_family_options: *mut *mut ffi::rocksdb_options_t,
     ) -> Vec<ColumnFamilyDescriptor> {
-        let column_family_names_iter =
+        let column_family_names_iter = unsafe {
             slice::from_raw_parts(column_family_names, num_column_families)
                 .iter()
-                .map(|ptr| from_cstr(*ptr));
-        let column_family_options_iter =
+                .map(|ptr| from_cstr(*ptr))
+        };
+        let column_family_options_iter = unsafe {
             slice::from_raw_parts(column_family_options, num_column_families)
                 .iter()
                 .map(|ptr| Options {
                     inner: *ptr,
                     outlive: OptionsMustOutliveDB::default(),
-                });
+                })
+        };
         let column_descriptors = column_family_names_iter
             .zip(column_family_options_iter)
-            .map(|(name, options)| ColumnFamilyDescriptor { name, options })
+            .map(|(name, options)| ColumnFamilyDescriptor {
+                name,
+                options,
+                ttl: ColumnFamilyTtl::Disabled,
+            })
             .collect::<Vec<_>>();
+
         // free pointers
-        slice::from_raw_parts(column_family_names, num_column_families)
-            .iter()
-            .for_each(|ptr| ffi::rocksdb_free(*ptr as *mut c_void));
-        ffi::rocksdb_free(column_family_names as *mut c_void);
-        ffi::rocksdb_free(column_family_options as *mut c_void);
+        unsafe {
+            slice::from_raw_parts(column_family_names, num_column_families)
+                .iter()
+                .for_each(|ptr| ffi::rocksdb_free(*ptr as *mut c_void));
+            ffi::rocksdb_free(column_family_names as *mut c_void);
+            ffi::rocksdb_free(column_family_options as *mut c_void);
+        };
+
         column_descriptors
     }
 
@@ -1463,9 +1601,10 @@ impl Options {
     /// UniversalCompactionBuilder::PickPeriodicCompaction().
     /// For backward compatibility, the effective value of this option takes
     /// into account the value of option `ttl`. The logic is as follows:
-    ///    - both options are set to 30 days if they have the default value.
-    ///    - if both options are zero, zero is picked. Otherwise, we take the min
-    ///    value among non-zero options values (i.e. takes the stricter limit).
+    ///
+    /// - both options are set to 30 days if they have the default value.
+    /// - if both options are zero, zero is picked. Otherwise, we take the min
+    ///   value among non-zero options values (i.e. takes the stricter limit).
     ///
     /// One main use of the feature is to make sure a file goes through compaction
     /// filters periodically. Users can also use the feature to clear up SST
@@ -1493,6 +1632,12 @@ impl Options {
     pub fn set_periodic_compaction_seconds(&mut self, secs: u64) {
         unsafe {
             ffi::rocksdb_options_set_periodic_compaction_seconds(self.inner, secs);
+        }
+    }
+
+    pub fn set_ttl(&mut self, ttl_secs: u64) {
+        unsafe {
+            ffi::rocksdb_options_set_ttl(self.inner, ttl_secs);
         }
     }
 
@@ -1784,6 +1929,12 @@ impl Options {
         }
     }
 
+    /// Returns the value of the `use_fsync` option.
+    pub fn get_use_fsync(&self) -> bool {
+        let val = unsafe { ffi::rocksdb_options_get_use_fsync(self.inner) };
+        val != 0
+    }
+
     /// Specifies the absolute info LOG dir.
     ///
     /// If it is empty, the log files will be in the same dir as data.
@@ -1977,7 +2128,7 @@ impl Options {
         }
     }
 
-    /// Enable/dsiable child process inherit open files.
+    /// Enable/disable child process inherit open files.
     ///
     /// Default: true
     pub fn set_is_fd_close_on_exec(&mut self, enabled: bool) {
@@ -1993,8 +2144,8 @@ impl Options {
     /// The exact behavior of this parameter is platform dependent.
     ///
     /// On POSIX systems, after RocksDB reads data from disk it will
-    /// mark the pages as "unneeded". The operating system may - or may not
-    /// - evict these pages from memory, reducing pressure on the system
+    /// mark the pages as "unneeded". The operating system may or may not
+    /// evict these pages from memory, reducing pressure on the system
     /// cache. If the disk block is requested again this can result in
     /// additional disk I/O.
     ///
@@ -2051,7 +2202,7 @@ impl Options {
         }
     }
 
-    /// Sets the minimum number of write buffers that will be merged together
+    /// Sets the minimum number of write buffers that will be merged
     /// before writing to storage.  If set to `1`, then
     /// all write buffers are flushed to L0 as individual files and this increases
     /// read amplification because a get request has to check in all of these
@@ -2312,7 +2463,7 @@ impl Options {
     }
 
     /// Sets the soft limit on number of level-0 files. We start slowing down writes at this
-    /// point. A value < `0` means that no writing slow down will be triggered by
+    /// point. A value < `0` means that no writing slowdown will be triggered by
     /// number of files in level-0.
     ///
     /// Default: `20`
@@ -2397,7 +2548,7 @@ impl Options {
     ///
     /// By default, i.e., when it is false, rocksdb does not advance the sequence
     /// number for new snapshots unless all the writes with lower sequence numbers
-    /// are already finished. This provides the immutability that we except from
+    /// are already finished. This provides the immutability that we expect from
     /// snapshots. Moreover, since Iterator and MultiGet internally depend on
     /// snapshots, the snapshot immutability results into Iterator and MultiGet
     /// offering consistent-point-in-time view. If set to true, although
@@ -2625,6 +2776,7 @@ impl Options {
     /// not checked at all.
     ///
     /// Default: false
+    #[deprecated(note = "RocksDB >= 10.5: option is ignored: checking done with a thread pool")]
     pub fn set_skip_checking_sst_file_sizes_on_db_open(&mut self, value: bool) {
         unsafe {
             ffi::rocksdb_options_set_skip_checking_sst_file_sizes_on_db_open(
@@ -2727,7 +2879,7 @@ impl Options {
             MemtableFactory::HashLinkList { bucket_count } => unsafe {
                 ffi::rocksdb_options_set_hash_link_list_rep(self.inner, bucket_count);
             },
-        };
+        }
     }
 
     pub fn set_block_based_table_factory(&mut self, factory: &BlockBasedOptions) {
@@ -3467,9 +3619,11 @@ impl Options {
     /// to be able to ingest behind (call IngestExternalFile() skipping keys
     /// that already exist, rather than overwriting matching keys).
     /// Setting this option to true has the following effects:
-    /// 1) Disable some internal optimizations around SST file compression.
-    /// 2) Reserve the last level for ingested files only.
-    /// 3) Compaction will not include any file from the last level.
+    ///
+    /// 1. Disable some internal optimizations around SST file compression.
+    /// 2. Reserve the last level for ingested files only.
+    /// 3. Compaction will not include any file from the last level.
+    ///
     /// Note that only Universal Compaction supports allow_ingest_behind.
     /// `num_levels` should be >= 3 if this option is turned on.
     ///
@@ -3570,10 +3724,12 @@ impl Options {
     /// or an IDENTITY file (historical, deprecated), or both. If this option is
     /// set to false (old behavior), then `write_identity_file` must be set to true.
     /// The manifest is preferred because
+    ///
     /// 1. The IDENTITY file is not checksummed, so it is not as safe against
     ///    corruption.
     /// 2. The IDENTITY file may or may not be copied with the DB (e.g. not
     ///    copied by BackupEngine), so is not reliable for the provenance of a DB.
+    ///
     /// This option might eventually be obsolete and removed as Identity files
     /// are phased out.
     ///
@@ -3970,10 +4126,12 @@ impl ReadOptions {
     }
 
     /// If true, keys deleted using the DeleteRange() API will be visible to
-    /// readers until they are naturally deleted during compaction. This improves
-    /// read performance in DBs with many range deletions.
+    /// readers until they are naturally deleted during compaction.
     ///
     /// Default: false
+    #[deprecated(
+        note = "deprecated in RocksDB 10.2.1: no performance impact if DeleteRange is not used"
+    )]
     pub fn set_ignore_range_deletions(&mut self, v: bool) {
         unsafe {
             ffi::rocksdb_readoptions_set_ignore_range_deletions(self.inner, c_uchar::from(v));
@@ -4212,6 +4370,20 @@ pub enum DataBlockIndexType {
     /// compatible with databases created without this feature. Once turned on, existing data will
     /// be gradually converted to the hash index format.
     BinaryAndHash = 1,
+}
+
+/// Used by BlockBasedOptions for setting metadata cache pinning tiers.
+/// Controls how metadata blocks (index, filter, etc.) are pinned in block cache.
+#[repr(C)]
+pub enum BlockBasedTablePinningTier {
+    /// Use fallback pinning tier (context-dependent)
+    Fallback = ffi::rocksdb_block_based_k_fallback_pinning_tier as isize,
+    /// No pinning - blocks can be evicted at any time
+    None = ffi::rocksdb_block_based_k_none_pinning_tier as isize,
+    /// Pin blocks for flushed files and similar scenarios
+    FlushAndSimilar = ffi::rocksdb_block_based_k_flush_and_similar_pinning_tier as isize,
+    /// Pin all blocks (highest priority)
+    All = ffi::rocksdb_block_based_k_all_pinning_tier as isize,
 }
 
 /// Defines the underlying memtable implementation.
@@ -4668,6 +4840,14 @@ mod tests {
             height: 4,
             branching_factor: 4,
         });
+    }
+
+    #[test]
+    fn test_use_fsync() {
+        let mut opts = Options::default();
+        assert!(!opts.get_use_fsync());
+        opts.set_use_fsync(true);
+        assert!(opts.get_use_fsync());
     }
 
     #[test]

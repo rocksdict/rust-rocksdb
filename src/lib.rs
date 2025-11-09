@@ -110,23 +110,24 @@ mod write_batch;
 pub use crate::{
     column_family::{
         AsColumnFamilyRef, BoundColumnFamily, ColumnFamily, ColumnFamilyDescriptor,
-        ColumnFamilyRef, UnboundColumnFamily, DEFAULT_COLUMN_FAMILY_NAME,
+        ColumnFamilyRef, ColumnFamilyTtl, DEFAULT_COLUMN_FAMILY_NAME,
     },
     compaction_filter::Decision as CompactionDecision,
     db::{
-        DBAccess, DBCommon, DBWithThreadMode, LiveFile, MultiThreaded, SingleThreaded, ThreadMode,
-        DB,
+        DBAccess, DBCommon, DBWithThreadMode, LiveFile, MultiThreaded, Range, SingleThreaded,
+        ThreadMode, DB,
     },
     db_iterator::{
         DBIterator, DBIteratorWithThreadMode, DBRawIterator, DBRawIteratorWithThreadMode,
         DBWALIterator, Direction, IteratorMode,
     },
     db_options::{
-        BlockBasedIndexType, BlockBasedOptions, BottommostLevelCompaction, Cache, ChecksumType,
-        CompactOptions, CompactionPri, CuckooTableOptions, DBCompactionStyle, DBCompressionType,
-        DBPath, DBRecoveryMode, DataBlockIndexType, FifoCompactOptions, FlushOptions,
-        IngestExternalFileOptions, KeyEncodingType, LogLevel, LruCacheOptions, MemtableFactory,
-        Options, PlainTableFactoryOptions, ReadOptions, ReadTier, UniversalCompactOptions,
+        BlockBasedIndexType, BlockBasedOptions, BlockBasedTablePinningTier,
+        BottommostLevelCompaction, Cache, ChecksumType, CompactOptions, CompactionPri,
+        CuckooTableOptions, DBCompactionStyle, DBCompressionType, DBPath, DBRecoveryMode,
+        DataBlockIndexType, FifoCompactOptions, FlushOptions, IngestExternalFileOptions,
+        KeyEncodingType, LogLevel, LruCacheOptions, MemtableFactory, Options,
+        PlainTableFactoryOptions, ReadOptions, ReadTier, UniversalCompactOptions,
         UniversalCompactionStopStyle, WaitForCompactOptions, WriteBufferManager, WriteOptions,
     },
     db_pinnable_slice::DBPinnableSlice,
@@ -142,8 +143,9 @@ pub use crate::{
         OptimisticTransactionDB, OptimisticTransactionOptions, Transaction, TransactionDB,
         TransactionDBOptions, TransactionOptions,
     },
-    wide_columns::{Iterable, PinnableWideColumns, WideColumn, WideColumns},
-    write_batch::{WriteBatch, WriteBatchIterator, WriteBatchWithTransaction},
+    write_batch::{
+        WriteBatch, WriteBatchIterator, WriteBatchIteratorCf, WriteBatchWithTransaction,
+    },
 };
 
 use librocksdb_sys as ffi;

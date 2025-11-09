@@ -1,16 +1,107 @@
 # Changelog
 
-## [Unreleased]
-* Document that `default` column family doesn't inherit open options of db (
-  0xdeafbeef)
-* Expose LRU cache options (athre0z)
-* Add `with_capacity_bytes` to `WriteBatch` (0xdeafbeef)
-* Add `set_compaction_pri` to `Options` (0xdeafbeef)
-* Add `lto` feature to enable link-time optimization using `linker-plugin-lto` (0xdeafbeef)
+## 0.24.0 (2025-08-10)
 
-## [Breaking Changes]
-* Update jemalloc-sys to 0.6.0 (0xdeafbeef)
-* Bump MSRV to 1.71.1 (0xdeafbeef)
+### Features
+
+- Support builds on AIX (mustartt)
+- Add `WriteBatch::put_log_data` support (lucasvuillier)
+- Add sync/fsync options and tests for backup engine (timvisee)
+- Add `get_approximate_sizes` function (ran-openai)
+- Implement `WriteBatchIteratorCf` trait (RiversJin)
+- Add `BlockBasedTablePinningTier` enum and setters (JackDrogon)
+
+### Improvements
+
+- Fix clippy warnings (niklasf)
+- Fix error message argument type (NoisyCoil)
+- Improve `opt_bytes_to_str` to avoid use-after-free (Chain-Fox, BurtonQin)
+- Support GCC 15 (tustvold)
+- Deprecate `set_ignore_range_deletions` (RocksDB 10.2.1) (evanj)
+- Mark `set_skip_checking_sst_file_sizes_on_db_open` as deprecated (evanj)
+
+### Bug Fixes
+
+- Fix C++ linking (brndnmtthws)
+- Fix bindgen-static build (Congyuwang)
+- Ensure jemalloc is linked when enabled (ran-openai)
+
+### Documentation
+
+- Minor edits to `db_iterator.rs` (evanj)
+- Update README and CONTRIBUTING.md (nnsW3)
+- Change URL to docs icon in README (petryshkaCODE)
+
+### Dependency Updates
+
+- Bump Rust to 1.85.0 (aleksuss)
+- Update to RocksDB 9.10.0 (niklasf)
+- Update to RocksDB v10.2.1 (humb1t)
+- Update to RocksDB v10.4.2 (aleksuss)
+
+### Contributors
+
+- 0xdeafbeef, zaidoon1, teenager-ETH, niklasf, NoisyCoil, nnsW3, kilavvy, mustartt, lucasvuillier, brndnmtthws,
+  timvisee, evanj, ran-openai, Congyuwang, petryshkaCODE, Chain-Fox, BurtonQin, RiversJin, tustvold, JackDrogon,
+  aleksuss, humb1t
+
+## 0.23.0 (2024-12-23)
+
+* Build status badge and other bits in README.md (jdanford)
+* Adds `crt_static` method (spector-9)
+* Fix `ptr::copy` requires both ptrs to be non-null (ruanpetterson)
+* Add portable feature for RocksDB build (sujayakar)
+* Update README.md with a new section for the portable feature (sujayakar)
+* Update to RocksDB 9.0.0 (Dirreke)
+* Add readme for mt_static feature (spector-9)
+* Make `BackupEngine` Send (widagdos)
+* Add linking `libatomic` command to `build.rs` to allow building (willemolding)
+* Revert portable feature as it doesn't do anything (zaidoon1)
+* Add delete_range to `OptimisticTransactionDB` (vadim-su)
+* Update rust toolchain to 1.70.0 (widagdos)
+* Bump snappy to 1.2.0 (aleksuss)
+* Document that `default` column family doesn't inherit open options of db (0xdeafbeef)
+* Toolchain: pin toolchain to rust 1.70.0 (cratelyn)
+* Add clippy MSRV and some clippy fixes (Congyuwang)
+* Port all value of `ReadTier` (w41ter)
+* Update src/db_options.rs (w41ter)
+* Add option `set_avoid_unnecessary_blocking_io` (w41ter)
+* Add option to enable autotuned ratelimiter (w41ter)
+* Add support for enabling blob cache (exabytes18)
+* Fix: android build in 32-bit devices (LucasXu0)
+* Support user defined timestamp in rust bindings (siyuan0322)
+* Bump lz4 1.10 (agourlay)
+* Properties for the `TransactionDB` (4TT1L4)
+* Improvements to user defined timestamp (larry0x)
+* Implement Sync for `{Bound}ColumnFamily` (jhpratt)
+* Use the provided system rocksdb prebuilt on FreeBSD (girlbossceo)
+* Deprecated Node version and outdated GitHub Actions (4TT1L4)
+* Fix cargo audit check in GitHub Actions CI (aleksuss)
+* RUSTSEC-2023-0020: `const-cstr` is Unmaintained (4TT1L4)
+* TransactionDB support in MemoryUsageBuilder (4TT1L4)
+* Bump `tikv-jemalloc-sys` to 0.6 (0xdeafbeef)
+* Improve statistics by auto gen enum Ticker & enum Histogram (rockeet)
+* Expose LRU cache options (athre0z)
+* Add `Env::from_raw` constructor (jgraettinger)
+* Fix unsoundness via impure `AsRef` (niklasf)
+* Fix two tests that want to write to the current working directory (mr-c)
+* Add missing supported BSD OSes (drizzt)
+* Fix column family creation race (stuhood)
+* Allow using static feature for the `bindgen` (Congyuwang)
+* Use `tempfile` instead of the current working directory (mr-c)
+* Update to RocksDB 9.7.4 (niklasf)
+* Add `with_capacity_bytes` to `WriteBatch` (0xdeafbeef)
+* ci: make most directories read-only before running the tests (mr-c)
+* Add `ROCKSDB_SCHED_GETCPU_PRESENT` for Linux build config (popcnt1)
+* Add `set_compaction_pri` to `Options` (0xdeafbeef)
+* Implement get_db_identity using rocksdb_get_db_identity (evanj)
+* Add `lto` feature to enable link-time optimization using `linker-plugin-lto` (0xdeafbeef)
+* Add `set_track_and_verify_wals_in_manifest` (evanj)
+* Fix some typos (DeVikingMark)
+* Fix multiple typos of different importance (crStiv)
+* Bump rust version for cargo audit job (aleksuss)
+* Update to RocksDB 9.9.3 (niklasf)
+* Allow to specify ttl per column family (0xdeafbeef)
 
 ## 0.22.0 (2024-02-13)
 
@@ -288,7 +379,6 @@
 * Added `iterator_cf_opt` function to `DB` (elichai)
 * Added `set_allow_mmap_writes` and `set_allow_mmap_reads` functions to `Options` (aleksuss)
 
-
 ## 0.12.0 (2019-03-10)
 
 ### Changes
@@ -306,7 +396,6 @@
 * Updated main example in doc tests (mohanson)
 * Updated requirements documentation (jamesray1)
 * Implemented `AsRef<[u8]>` for `DBVector` (iSynaptic)
-
 
 ## 0.11.0 (2019-01-10)
 
@@ -334,7 +423,6 @@
 * exposed `keep_log_file_num` option (romanz)
 * added ability to retrieve `WriteBatch` serialized size (romanz)
 * added `set_options` method to `DB` to allow changing options without closing and re-opening the database (romanz)
-
 
 ## 0.10.1 (2018-07-17)
 
@@ -456,7 +544,7 @@
 * Cleaned up and improved coverage and tests of the ffi module (alexreg)
 * Added many new methods to the `Options` type (development by ngaut, BusyJay, zhangjinpeng1987, siddontang and hhkbp2. ported by kaedroho)
 * Added `len` and `is_empty` methods to `WriteBatch` (development by siddontang. ported by kaedroho)
-* Added `path` mathod to `DB` (development by siddontang. ported by kaedroho)
+* Added `path` method to `DB` (development by siddontang. ported by kaedroho)
 * `DB::open` now accepts any type that implements `Into<Path>` as the path argument (kaedroho)
 * `DB` now implements the `Debug` trait (kaedroho)
 * Add iterator_cf to snapshot (jezell)

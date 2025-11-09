@@ -24,13 +24,12 @@ use std::{marker::PhantomData, slice};
 /// A type alias to keep compatibility. See [`DBRawIteratorWithThreadMode`] for details
 pub type DBRawIterator<'a> = DBRawIteratorWithThreadMode<'a, DB>;
 
-/// An iterator over a database or column family, with specifiable
-/// ranges and direction.
+/// A low-level iterator over a database or column family, created by [`DB::raw_iterator`]
+/// and other `raw_iterator_*` methods.
 ///
-/// This iterator is different to the standard ``DBIteratorWithThreadMode`` as it aims Into
-/// replicate the underlying iterator API within RocksDB itself. This should
-/// give access to more performance and flexibility but departs from the
-/// widely recognized Rust idioms.
+/// This iterator replicates RocksDB's API. It should provide better
+/// performance and more features than [`DBIteratorWithThreadMode`], which is a standard
+/// Rust [`std::iter::Iterator`].
 ///
 /// ```
 /// use rocksdb::{DB, Options};
@@ -395,7 +394,7 @@ impl<'a, D: DBAccess> DBRawIteratorWithThreadMode<'a, D> {
     }
 }
 
-impl<'a, D: DBAccess> Drop for DBRawIteratorWithThreadMode<'a, D> {
+impl<D: DBAccess> Drop for DBRawIteratorWithThreadMode<'_, D> {
     fn drop(&mut self) {
         unsafe {
             ffi::rocksdb_iter_destroy(self.inner.as_ptr());
@@ -403,14 +402,16 @@ impl<'a, D: DBAccess> Drop for DBRawIteratorWithThreadMode<'a, D> {
     }
 }
 
-unsafe impl<'a, D: DBAccess> Send for DBRawIteratorWithThreadMode<'a, D> {}
-unsafe impl<'a, D: DBAccess> Sync for DBRawIteratorWithThreadMode<'a, D> {}
+unsafe impl<D: DBAccess> Send for DBRawIteratorWithThreadMode<'_, D> {}
+unsafe impl<D: DBAccess> Sync for DBRawIteratorWithThreadMode<'_, D> {}
 
 /// A type alias to keep compatibility. See [`DBIteratorWithThreadMode`] for details
 pub type DBIterator<'a> = DBIteratorWithThreadMode<'a, DB>;
 
-/// An iterator over a database or column family, with specifiable
-/// ranges and direction.
+/// A standard Rust [`Iterator`] over a database or column family.
+///
+/// As an alternative, [`DBRawIteratorWithThreadMode`] is a low level wrapper around
+/// RocksDB's API, which can provide better performance and more features.
 ///
 /// ```
 /// use rocksdb::{DB, Direction, IteratorMode, Options};
@@ -519,7 +520,7 @@ impl<'a, D: DBAccess> DBIteratorWithThreadMode<'a, D> {
     }
 }
 
-impl<'a, D: DBAccess> Iterator for DBIteratorWithThreadMode<'a, D> {
+impl<D: DBAccess> Iterator for DBIteratorWithThreadMode<'_, D> {
     type Item = Result<KVBytes, Error>;
 
     fn next(&mut self) -> Option<Result<KVBytes, Error>> {
@@ -539,7 +540,7 @@ impl<'a, D: DBAccess> Iterator for DBIteratorWithThreadMode<'a, D> {
     }
 }
 
-impl<'a, D: DBAccess> std::iter::FusedIterator for DBIteratorWithThreadMode<'a, D> {}
+impl<D: DBAccess> std::iter::FusedIterator for DBIteratorWithThreadMode<'_, D> {}
 
 impl<'a, D: DBAccess> Into<DBRawIteratorWithThreadMode<'a, D>> for DBIteratorWithThreadMode<'a, D> {
     fn into(self) -> DBRawIteratorWithThreadMode<'a, D> {

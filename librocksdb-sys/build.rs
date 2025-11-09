@@ -1,6 +1,11 @@
 use std::path::Path;
 use std::{env, fs, path::PathBuf, process::Command};
 
+// On these platforms jemalloc-sys will use a prefixed jemalloc which cannot be linked together
+// with RocksDB.
+// See https://github.com/tikv/jemallocator/blob/tikv-jemalloc-sys-0.5.3/jemalloc-sys/src/env.rs#L25
+const NO_JEMALLOC_TARGETS: &[&str] = &["android", "dragonfly", "musl", "darwin"];
+
 fn link(name: &str, bundled: bool) {
     use std::env::var;
     let target = var("TARGET").unwrap();
@@ -23,10 +28,7 @@ fn fail_on_empty_directory(name: &str) {
 }
 
 fn rocksdb_include_dir() -> String {
-    match env::var("ROCKSDB_INCLUDE_DIR") {
-        Ok(val) => val,
-        Err(_) => "rocksdb/include".to_string(),
-    }
+    env::var("ROCKSDB_INCLUDE_DIR").unwrap_or_else(|_| "rocksdb/include".to_string())
 }
 
 fn bindgen_rocksdb() {
@@ -96,8 +98,8 @@ fn build_rocksdb() {
         config.flag("-flto");
         if !config.get_compiler().is_like_clang() {
             panic!(
-                "LTO is only supported with clang. Either disable the `lto` feature\
-             or set `CC=/usr/bin/clang CXX=/usr/bin/clang++` environment variables."
+                "LTO is only supported with clang. Either disable the `lto` feature \
+                or set `CC=/usr/bin/clang CXX=/usr/bin/clang++` environment variables."
             );
         }
     }
@@ -173,6 +175,10 @@ fn build_rocksdb() {
         if &target == "armv7-linux-androideabi" {
             config.define("_FILE_OFFSET_BITS", Some("32"));
         }
+    } else if target.contains("aix") {
+        config.define("OS_AIX", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
     } else if target.contains("linux") {
         config.define("OS_LINUX", None);
         config.define("ROCKSDB_PLATFORM_POSIX", None);
@@ -230,12 +236,11 @@ fn build_rocksdb() {
         // Add Windows-specific sources
         lib_sources.extend([
             "port/win/env_default.cc",
-            "port/win/port_win.cc",
-            "port/win/xpress_win.cc",
-            "port/win/io_win.cc",
-            "port/win/win_thread.cc",
             "port/win/env_win.cc",
+            "port/win/io_win.cc",
+            "port/win/port_win.cc",
             "port/win/win_logger.cc",
+            "port/win/win_thread.cc",
         ]);
 
         if cfg!(feature = "jemalloc") {
@@ -245,8 +250,12 @@ fn build_rocksdb() {
 
     config.define("ROCKSDB_SUPPORT_THREAD_LOCAL", None);
 
-    if cfg!(feature = "jemalloc") {
-        config.define("WITH_JEMALLOC", "ON");
+    if cfg!(feature = "jemalloc") && NO_JEMALLOC_TARGETS.iter().all(|i| !target.contains(i)) {
+        config.define("ROCKSDB_JEMALLOC", Some("1"));
+        config.define("JEMALLOC_NO_DEMANGLE", Some("1"));
+        if let Some(jemalloc_root) = env::var_os("DEP_JEMALLOC_ROOT") {
+            config.include(Path::new(&jemalloc_root).join("include"));
+        }
     }
 
     #[cfg(feature = "io-uring")]
@@ -270,7 +279,7 @@ fn build_rocksdb() {
         config.flag("-EHsc");
         config.flag("-std:c++17");
     } else {
-        config.flag(&cxx_standard());
+        config.flag(cxx_standard());
         // matches the flags in CMakeLists.txt from rocksdb
         config.flag("-Wsign-compare");
         config.flag("-Wshadow");
@@ -294,6 +303,15 @@ fn build_rocksdb() {
 
     config.cpp(true);
     config.flag_if_supported("-std=c++17");
+
+    if !target.contains("windows") {
+        config.flag("-include").flag("cstdint");
+    }
+
+    // By default `cc` will link C++ standard library automatically,
+    // see https://docs.rs/cc/latest/cc/index.html#c-support.
+    // There is no need to manually set `cpp_link_stdlib`.
+
     config.compile("librocksdb.a");
 }
 
@@ -376,9 +394,23 @@ fn update_submodules() {
 
     match ret.map(|status| (status.success(), status.code())) {
         Ok((true, _)) => (),
-        Ok((false, Some(c))) => panic!("Command failed with error code {}", c),
+        Ok((false, Some(c))) => panic!("Command failed with error code {c}"),
         Ok((false, None)) => panic!("Command got killed"),
-        Err(e) => panic!("Command failed with error: {}", e),
+        Err(e) => panic!("Command failed with error: {e}"),
+    }
+}
+
+fn cpp_link_stdlib(target: &str) {
+    // according to https://github.com/alexcrichton/cc-rs/blob/master/src/lib.rs#L2189
+    if let Ok(stdlib) = env::var("CXXSTDLIB") {
+        println!("cargo:rustc-link-lib=dylib={stdlib}");
+    } else if target.contains("apple") || target.contains("freebsd") || target.contains("openbsd") {
+        println!("cargo:rustc-link-lib=dylib=c++");
+    } else if target.contains("linux") {
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+    } else if target.contains("aix") {
+        println!("cargo:rustc-link-lib=dylib=c++");
+        println!("cargo:rustc-link-lib=dylib=c++abi");
     }
 }
 
@@ -391,14 +423,14 @@ fn main() {
 
     if !try_to_find_and_link_lib("ROCKSDB") {
         // rocksdb only works with the prebuilt rocksdb system lib on freebsd.
-        // we dont need to rebuild rocksdb
+        // we don't need to rebuild rocksdb
         if target.contains("freebsd") {
             println!("cargo:rustc-link-search=native=/usr/local/lib");
             let mode = match env::var_os("ROCKSDB_STATIC") {
                 Some(_) => "static",
                 None => "dylib",
             };
-            println!("cargo:rustc-link-lib={}=rocksdb", mode);
+            println!("cargo:rustc-link-lib={mode}=rocksdb");
 
             return;
         }
@@ -407,12 +439,7 @@ fn main() {
         fail_on_empty_directory("rocksdb");
         build_rocksdb();
     } else {
-        // according to https://github.com/alexcrichton/cc-rs/blob/master/src/lib.rs#L2189
-        if target.contains("apple") || target.contains("freebsd") || target.contains("openbsd") {
-            println!("cargo:rustc-link-lib=dylib=c++");
-        } else if target.contains("linux") {
-            println!("cargo:rustc-link-lib=dylib=stdc++");
-        }
+        cpp_link_stdlib(&target);
     }
     if cfg!(feature = "snappy") && !try_to_find_and_link_lib("SNAPPY") {
         println!("cargo:rerun-if-changed=snappy/");

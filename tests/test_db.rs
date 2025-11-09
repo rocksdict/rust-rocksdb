@@ -16,7 +16,7 @@ mod util;
 
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{mem, sync::Arc, thread, time::Duration};
+use std::{sync::Arc, thread, time::Duration};
 
 use pretty_assertions::assert_eq;
 
@@ -24,8 +24,8 @@ use rocksdb::statistics::{Histogram, StatsLevel, Ticker};
 use rocksdb::WriteOptions;
 use rocksdb::{
     perf::get_memory_usage_stats, BlockBasedOptions, BottommostLevelCompaction, Cache,
-    ColumnFamilyDescriptor, CompactOptions, CuckooTableOptions, DBAccess, DBCompactionStyle,
-    DBWithThreadMode, Env, Error, ErrorKind, FifoCompactOptions, Iterable as _, IteratorMode,
+    ColumnFamilyDescriptor, ColumnFamilyTtl, CompactOptions, CuckooTableOptions, DBAccess,
+    DBCompactionStyle, DBWithThreadMode, Env, Error, ErrorKind, FifoCompactOptions, IteratorMode,
     MultiThreaded, Options, PerfContext, PerfMetric, ReadOptions, SingleThreaded, SliceTransform,
     Snapshot, UniversalCompactOptions, UniversalCompactionStopStyle, WaitForCompactOptions,
     WriteBatch, DB, DEFAULT_COLUMN_FAMILY_NAME,
@@ -304,14 +304,14 @@ fn snapshot_test() {
 }
 
 #[derive(Clone)]
-struct SnapshotWrapper {
-    snapshot: Arc<Snapshot<'static>>,
+struct SnapshotWrapper<'db> {
+    snapshot: Arc<Snapshot<'db>>,
 }
 
-impl SnapshotWrapper {
-    fn new(db: &DB) -> Self {
+impl<'db> SnapshotWrapper<'db> {
+    fn new(db: &'db DB) -> Self {
         Self {
-            snapshot: Arc::new(unsafe { mem::transmute(db.snapshot()) }),
+            snapshot: Arc::new(db.snapshot()),
         }
     }
 
@@ -331,13 +331,14 @@ fn sync_snapshot_test() {
     assert!(db.put(b"k1", b"v1").is_ok());
     assert!(db.put(b"k2", b"v2").is_ok());
 
-    let wrapper = SnapshotWrapper::new(&db);
-    let wrapper_1 = wrapper.clone();
-    let handler_1 = thread::spawn(move || wrapper_1.check("k1", b"v1"));
-    let handler_2 = thread::spawn(move || wrapper.check("k2", b"v2"));
-
-    assert!(handler_1.join().unwrap());
-    assert!(handler_2.join().unwrap());
+    let wrapper_1 = SnapshotWrapper::new(&db);
+    let wrapper_2 = wrapper_1.clone();
+    thread::scope(|s| {
+        let handler_1 = s.spawn(move || wrapper_1.check("k1", b"v1"));
+        let handler_2 = s.spawn(move || wrapper_2.check("k2", b"v2"));
+        assert!(handler_1.join().unwrap());
+        assert!(handler_2.join().unwrap());
+    });
 }
 
 #[test]
@@ -493,10 +494,10 @@ struct OperationCounts {
 }
 
 impl rocksdb::WriteBatchIterator for OperationCounts {
-    fn put(&mut self, _key: Box<[u8]>, _value: Box<[u8]>) {
+    fn put(&mut self, _key: &[u8], _value: &[u8]) {
         self.puts += 1;
     }
-    fn delete(&mut self, _key: Box<[u8]>) {
+    fn delete(&mut self, _key: &[u8]) {
         self.deletes += 1;
     }
 }
@@ -735,6 +736,46 @@ fn test_open_with_ttl() {
 }
 
 #[test]
+fn test_ttl_mix() {
+    let path = DBPath::new("_rust_rocksdb_test_open_with_ttl_mix");
+
+    let mut opts = Options::default();
+    opts.create_if_missing(true);
+    opts.create_missing_column_families(true);
+
+    let cf1 = ColumnFamilyDescriptor::new_with_ttl(
+        "ttl_1",
+        Options::default(),
+        ColumnFamilyTtl::Duration(Duration::from_secs(1)),
+    );
+    let no_ttl = ColumnFamilyDescriptor::new_with_ttl(
+        "no_ttl",
+        Options::default(),
+        ColumnFamilyTtl::Disabled,
+    );
+
+    let db = DB::open_cf_descriptors_with_ttl(&opts, &path, [cf1, no_ttl], Duration::from_secs(1))
+        .unwrap();
+    db.put(b"key1", b"value1").unwrap();
+
+    let cf1 = db.cf_handle("ttl_1").unwrap();
+    let no_ttl = db.cf_handle("no_ttl").unwrap();
+
+    db.put_cf(&cf1, b"key2", b"value2").unwrap();
+    db.put_cf(&no_ttl, b"key3", b"value3").unwrap();
+
+    thread::sleep(Duration::from_secs(2));
+    // Trigger a manual compaction, this will check the TTL filter
+    // in the database and drop all expired entries.
+    db.compact_range(None::<&[u8]>, None::<&[u8]>);
+    db.compact_range_cf(&cf1, None::<&[u8]>, None::<&[u8]>);
+    db.compact_range_cf(&no_ttl, None::<&[u8]>, None::<&[u8]>);
+    assert!(db.get(b"key1").unwrap().is_none());
+    assert!(db.get_cf(&cf1, b"key2").unwrap().is_none());
+    assert!(db.get_cf(&no_ttl, b"key3").unwrap().is_some());
+}
+
+#[test]
 fn test_open_cf_with_ttl() {
     let path = DBPath::new("_rust_rocksdb_test_open_cf_with_ttl");
 
@@ -785,7 +826,7 @@ fn test_open_with_multiple_refs_as_single_threaded() {
 
 #[test]
 fn test_open_utf8_path() {
-    let path = DBPath::new("_rust_rocksdb_utf8_path_temporärer_Ordner");
+    let path = DBPath::new("_rust_rocksdb_utf8_path_temporärer_Order");
 
     {
         let db = DB::open_default(&path).unwrap();
@@ -1675,6 +1716,98 @@ fn test_full_history_ts_low() {
         db.increase_full_history_ts_low(&cf, ts).unwrap();
         let ret = U64Timestamp::from(db.get_full_history_ts_low(&cf).unwrap().as_slice());
         assert_eq!(ts, ret);
+
+        let _ = DB::destroy(&Options::default(), &path);
+    }
+}
+
+#[test]
+fn test_get_approximate_sizes_cf() {
+    let path = DBPath::new("_rust_rocksdb_get_approximate_sizes_cf_test");
+    let _ = DB::destroy(&Options::default(), &path);
+
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+
+        let cf_opts = Options::default();
+        let cfs = vec![("default", cf_opts)];
+
+        let db = DB::open_cf_with_opts(&opts, &path, cfs).unwrap();
+        let cf = db.cf_handle("default").unwrap();
+
+        // Insert some data
+        for i in 0..1000 {
+            let key = format!("key_{i:04}");
+            let value = format!("value_{i:04}");
+            db.put_cf(&cf, key.as_bytes(), value.as_bytes()).unwrap();
+        }
+
+        // Flush to ensure data is written to disk
+        db.flush_cf(&cf).unwrap();
+
+        // Get approximate sizes
+        let start_key = b"key_0000";
+        let end_key = b"key_0999";
+        let sizes = db.get_approximate_sizes_cf(&cf, &[rocksdb::Range::new(start_key, end_key)]);
+
+        // Check that the sizes are greater than zero
+        assert!(sizes[0] > 0);
+
+        let _ = DB::destroy(&Options::default(), &path);
+    }
+}
+
+#[test]
+fn test_enable_and_disable_file_deletions() {
+    let path = DBPath::new("_rust_rocksdb_enable_and_disable_file_deletions");
+    let _ = DB::destroy(&Options::default(), &path);
+
+    {
+        let get_sst_files = || {
+            std::fs::read_dir((&path).as_ref())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|f| f.file_name().to_string_lossy().ends_with(".sst"))
+                .map(|f| f.path())
+                .collect::<Vec<_>>()
+        };
+
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+
+        let db = DB::open(&opts, &path).unwrap();
+        db.disable_file_deletions().unwrap();
+
+        // insert some data and flush to create first sst.
+        for i in 0..10 {
+            db.put(format!("k{}", i).as_bytes(), format!("v{}", i).as_bytes())
+                .unwrap();
+        }
+        db.flush().unwrap();
+
+        assert_eq!(get_sst_files().len(), 1);
+
+        // insert some data and flush to create second sst.
+        for i in 10..20 {
+            db.put(format!("k{}", i).as_bytes(), format!("v{}", i).as_bytes())
+                .unwrap();
+        }
+        db.flush().unwrap();
+
+        assert_eq!(get_sst_files().len(), 2);
+
+        // normally after compaction we should have 1 file, but due to disabled
+        // flag we should have 3.
+        db.compact_range(None::<&[u8]>, None::<&[u8]>);
+        assert_eq!(get_sst_files().len(), 3);
+
+        // turn file deletions back on and compact.
+        db.enable_file_deletions().unwrap();
+        db.compact_range(None::<&[u8]>, None::<&[u8]>);
+
+        assert_eq!(get_sst_files().len(), 1);
 
         let _ = DB::destroy(&Options::default(), &path);
     }

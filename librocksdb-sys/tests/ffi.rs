@@ -18,6 +18,7 @@
 #![allow(
     non_snake_case,
     non_upper_case_globals,
+    static_mut_refs,
     unused_mut,
     unused_unsafe,
     unused_variables
@@ -64,10 +65,10 @@ unsafe fn rstr<'a>(s: *const c_char) -> Cow<'a, str> {
 }
 
 fn GetTempDir() -> PathBuf {
-    return match option_env!("TEST_TMPDIR") {
-        Some("") | None => env::temp_dir(),
-        Some(s) => s.into(),
-    };
+    option_env!("TEST_TMPDIR")
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| env::temp_dir())
 }
 
 unsafe fn StartPhase(name: &'static str) {
